@@ -1,0 +1,264 @@
+import { Hono } from 'hono';
+import { getFriendByLineUserId, getLineAccounts, jstNow, type Friend } from '@line-crm/db';
+import { LineClient } from '@line-crm/line-sdk';
+import { verifyCallerLineUserId } from '../services/liff-auth.js';
+import type { Env } from '../index.js';
+
+/**
+ * Stamp card API for LIFF clients.
+ *
+ * Auth boundary: mounted under `/api/liff/`, which authMiddleware skips for
+ * staff auth. Identity comes from the LIFF id_token, verified server-side by
+ * `verifyCallerLineUserId` against LINE's verify endpoint. The friend row is
+ * resolved from the verified `sub` — clients never pass a friend id, so one
+ * customer can never read or mutate another's card.
+ *
+ * Anti-abuse: `claim` additionally requires the in-store code (STAMP_QR_CODE).
+ * The printed QR embeds it, so a stamp can only be earned by someone who has
+ * seen the code. A same-day replay is rejected by the `stamp_last_date` check,
+ * which bounds a leaked photo of the QR to one stamp per day rather than an
+ * unlimited farm.
+ */
+const stampRoutes = new Hono<Env>();
+
+/** Stamps needed for one reward. Reaching it resets the card and banks a reward. */
+export const STAMP_GOAL = 5;
+/** Card count that triggers the "almost there" nudge push. */
+const NUDGE_AT = 3;
+
+export interface StampState {
+  count: number;
+  lastDate: string | null;
+  rewardsPending: number;
+  rewardsTotal: number;
+}
+
+/** JST calendar date (YYYY-MM-DD) used for the one-stamp-per-day rule. */
+export function jstDate(now: string = jstNow()): string {
+  return now.slice(0, 10);
+}
+
+function toInt(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * Read stamp fields out of `friends.metadata`.
+ *
+ * metadata is a free-form JSON blob shared with forms and other features, so
+ * this only ever touches the `stamp_*` keys and tolerates malformed JSON by
+ * falling back to an empty card.
+ */
+export function readState(metadataJson: string | null | undefined): StampState {
+  let raw: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(metadataJson || '{}');
+    if (parsed && typeof parsed === 'object') raw = parsed as Record<string, unknown>;
+  } catch {
+    raw = {};
+  }
+  const lastDate = raw.stamp_last_date;
+  return {
+    count: Math.min(toInt(raw.stamp_count), STAMP_GOAL - 1),
+    lastDate: typeof lastDate === 'string' && lastDate ? lastDate : null,
+    rewardsPending: toInt(raw.stamp_rewards_pending),
+    rewardsTotal: toInt(raw.stamp_rewards_total),
+  };
+}
+
+/** Merge stamp fields back into metadata, preserving every other key. */
+export function writeState(metadataJson: string | null | undefined, state: StampState): string {
+  let raw: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(metadataJson || '{}');
+    if (parsed && typeof parsed === 'object') raw = parsed as Record<string, unknown>;
+  } catch {
+    raw = {};
+  }
+  return JSON.stringify({
+    ...raw,
+    stamp_count: state.count,
+    stamp_last_date: state.lastDate,
+    stamp_rewards_pending: state.rewardsPending,
+    stamp_rewards_total: state.rewardsTotal,
+  });
+}
+
+async function persist(db: D1Database, friend: Friend, state: StampState): Promise<void> {
+  await db
+    .prepare(`UPDATE friends SET metadata = ?, updated_at = ? WHERE id = ?`)
+    .bind(writeState(friend.metadata, state), jstNow(), friend.id)
+    .run();
+}
+
+async function resolveFriend(
+  c: { req: { header: (name: string) => string | undefined } },
+  env: Env['Bindings'],
+): Promise<{ status: 'invalid_token' } | { status: 'no_friend' } | { status: 'ok'; friend: Friend }> {
+  const lineUserId = await verifyCallerLineUserId(c.req.header('Authorization'), env);
+  if (!lineUserId) return { status: 'invalid_token' };
+  const friend = await getFriendByLineUserId(env.DB, lineUserId);
+  if (!friend) return { status: 'no_friend' };
+  return { status: 'ok', friend };
+}
+
+/** Constant-time-ish compare so the in-store code is not probeable by timing. */
+function codeMatches(expected: string | undefined, provided: unknown): boolean {
+  if (!expected || typeof provided !== 'string') return false;
+  if (expected.length !== provided.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ provided.charCodeAt(i);
+  return diff === 0;
+}
+
+async function clientFor(env: Env['Bindings'], friend: Friend): Promise<LineClient | null> {
+  const accounts = await getLineAccounts(env.DB);
+  const account = accounts.find((a) => a.id === friend.line_account_id) ?? accounts[0];
+  const token =
+    (account as unknown as { channel_access_token?: string } | undefined)?.channel_access_token ??
+    env.LINE_CHANNEL_ACCESS_TOKEN;
+  return token ? new LineClient(token) : null;
+}
+
+function rewardFlex(rewardsPending: number): Record<string, unknown> {
+  return {
+    type: 'bubble',
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'md',
+      contents: [
+        {
+          type: 'text',
+          text: 'スタンプが満杯になりました',
+          weight: 'bold',
+          size: 'xs',
+          color: '#C9A227',
+        },
+        { type: 'text', text: 'バスクチーズケーキ 1つ無料', weight: 'bold', size: 'xl', wrap: true },
+        {
+          type: 'text',
+          text: `5回のご来店、ありがとうございます🌙\n無料券が ${rewardsPending} 枚たまっています。次回のご来店でお使いください。`,
+          size: 'sm',
+          color: '#666666',
+          wrap: true,
+        },
+        { type: 'separator', margin: 'lg' },
+        {
+          type: 'text',
+          text: 'プレーン・抹茶・キャラメルからお選びいただけます。スタンプカードの画面をスタッフにお見せください。',
+          size: 'sm',
+          color: '#666666',
+          wrap: true,
+          margin: 'lg',
+        },
+      ],
+    },
+  };
+}
+
+/** Current card state for the signed-in customer. */
+stampRoutes.get('/api/liff/stamps/me', async (c) => {
+  const resolved = await resolveFriend(c, c.env);
+  if (resolved.status === 'invalid_token') return c.json({ error: 'unauthorized' }, 401);
+  if (resolved.status === 'no_friend') return c.json({ error: 'friend_not_found' }, 404);
+
+  const state = readState(resolved.friend.metadata);
+  return c.json({
+    count: state.count,
+    goal: STAMP_GOAL,
+    rewardsPending: state.rewardsPending,
+    rewardsTotal: state.rewardsTotal,
+    stampedToday: state.lastDate === jstDate(),
+    displayName: resolved.friend.display_name,
+  });
+});
+
+/** Earn one stamp. Requires the in-store code and is capped at one per JST day. */
+stampRoutes.post('/api/liff/stamps/claim', async (c) => {
+  const resolved = await resolveFriend(c, c.env);
+  if (resolved.status === 'invalid_token') return c.json({ error: 'unauthorized' }, 401);
+  if (resolved.status === 'no_friend') return c.json({ error: 'friend_not_found' }, 404);
+
+  const body = await c.req.json<{ code?: string }>().catch(() => ({}) as { code?: string });
+  if (!codeMatches(c.env.STAMP_QR_CODE, body.code)) {
+    return c.json({ error: 'invalid_code' }, 403);
+  }
+
+  const friend = resolved.friend;
+  const state = readState(friend.metadata);
+  const today = jstDate();
+  if (state.lastDate === today) {
+    return c.json(
+      {
+        error: 'already_stamped_today',
+        count: state.count,
+        goal: STAMP_GOAL,
+        rewardsPending: state.rewardsPending,
+      },
+      409,
+    );
+  }
+
+  const next: StampState = { ...state, count: state.count + 1, lastDate: today };
+  let rewarded = false;
+  if (next.count >= STAMP_GOAL) {
+    next.count = 0;
+    next.rewardsPending = state.rewardsPending + 1;
+    next.rewardsTotal = state.rewardsTotal + 1;
+    rewarded = true;
+  }
+  await persist(c.env.DB, friend, next);
+
+  // Push notifications are best-effort: the stamp is already committed, so a
+  // LINE API failure must not surface as a failed claim.
+  try {
+    const client = await clientFor(c.env, friend);
+    if (client) {
+      if (rewarded) {
+        await client.pushFlexMessage(
+          friend.line_user_id,
+          'スタンプが満杯になりました',
+          rewardFlex(next.rewardsPending),
+        );
+      } else if (next.count === NUDGE_AT) {
+        await client.pushTextMessage(
+          friend.line_user_id,
+          `スタンプが${NUDGE_AT}個になりました🌙\n\nあと${STAMP_GOAL - NUDGE_AT}回のご来店で、バスクチーズケーキが1つ無料になります。\n\nいつも足を運んでいただき、ありがとうございます。`,
+        );
+      }
+    }
+  } catch {
+    // ignore — see comment above
+  }
+
+  return c.json({
+    ok: true,
+    count: next.count,
+    goal: STAMP_GOAL,
+    rewarded,
+    rewardsPending: next.rewardsPending,
+  });
+});
+
+/** Spend one banked reward. Requires the in-store code so it can only happen on site. */
+stampRoutes.post('/api/liff/stamps/redeem', async (c) => {
+  const resolved = await resolveFriend(c, c.env);
+  if (resolved.status === 'invalid_token') return c.json({ error: 'unauthorized' }, 401);
+  if (resolved.status === 'no_friend') return c.json({ error: 'friend_not_found' }, 404);
+
+  const body = await c.req.json<{ code?: string }>().catch(() => ({}) as { code?: string });
+  if (!codeMatches(c.env.STAMP_QR_CODE, body.code)) {
+    return c.json({ error: 'invalid_code' }, 403);
+  }
+
+  const state = readState(resolved.friend.metadata);
+  if (state.rewardsPending <= 0) return c.json({ error: 'no_reward' }, 409);
+
+  const next: StampState = { ...state, rewardsPending: state.rewardsPending - 1 };
+  await persist(c.env.DB, resolved.friend, next);
+  return c.json({ ok: true, count: next.count, goal: STAMP_GOAL, rewardsPending: next.rewardsPending });
+});
+
+export default stampRoutes;
