@@ -493,6 +493,41 @@ async function initEventBooking(initialKind: 'detail' | 'history'): Promise<void
   mountEventBooking(container, ctx, initial);
 }
 
+// ─── Stamp card (React, dynamic-imported) ────────────────
+
+async function initStampCard(): Promise<void> {
+  // event-booking と同じ初期化シーケンス: profile/idToken/friendship を取得し、
+  // 未友達なら friend-add gate、友達なら React mount。
+  //
+  // 店内 QR は `?page=stamp&sc=<code>` を埋め込む。sc があればマウント後に
+  // 自動で 1 個加算し、なければ残高表示のみ (リッチメニューからの導線)。
+  const [profile, idToken, friendship] = await Promise.all([
+    liff.getProfile(),
+    Promise.resolve(liff.getIDToken()),
+    liff.getFriendship(),
+  ]);
+  if (!idToken) {
+    showError('LINE 認証情報の取得に失敗しました。LINE アプリ内で再度開いてください。');
+    return;
+  }
+
+  if (!friendship.friendFlag) {
+    showFriendAdd(profile);
+    return;
+  }
+
+  const container = document.getElementById('app');
+  if (!container) {
+    showError('mount target #app が見つかりません');
+    return;
+  }
+  const { mountStampCard } = await import('./stamp-card/main.js');
+  mountStampCard(container, {
+    idToken,
+    code: new URLSearchParams(window.location.search).get('sc'),
+  });
+}
+
 // ─── Affiliate self-serve (React, dynamic-imported) ──────
 
 async function initAffiliate(): Promise<void> {
@@ -593,6 +628,8 @@ async function main() {
       await initEventBooking('history');
     } else if (page === 'affiliate') {
       await initAffiliate();
+    } else if (page === 'stamp') {
+      await initStampCard();
     } else if (page === 'form') {
       const params = new URLSearchParams(window.location.search);
       const formId = params.get('id');

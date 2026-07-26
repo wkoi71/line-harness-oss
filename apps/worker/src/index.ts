@@ -78,6 +78,7 @@ import { messageTemplates } from './routes/message-templates.js';
 import dedupPreview from './routes/dedup-preview.js';
 import { profileRefresh } from './routes/profile-refresh.js';
 import { richMenuGroups } from './routes/rich-menu-groups.js';
+import stampRoutes from './routes/stamps.js';
 import adminVersion from './routes/admin-version.js';
 import adminUpdate from './routes/admin-update.js';
 import { isLinkPreviewBot } from './lib/og-bot.js';
@@ -125,6 +126,10 @@ export type Env = {
     WORKER_PUBLIC_URL?: string;
     ADMIN_PUBLIC_URL?: string;
     LIFF_PUBLIC_URL?: string;
+    // Stamp card — shared secret embedded in the printed in-store QR. Leaving it
+    // unset disables earning and redeeming (both return 403), so a deploy that
+    // forgets it fails closed instead of handing out free stamps.
+    STAMP_QR_CODE?: string;
   };
   Variables: {
     staff: { id: string; name: string; role: 'owner' | 'admin' | 'staff' };
@@ -168,6 +173,7 @@ app.route('/', inbox);
 app.route('/', openapi);
 app.route('/', liffRoutes);
 app.route('/', affiliateSelfRoutes);
+app.route('/', stampRoutes);
 
 // Mount route groups — Round 3
 app.route('/', webhooks);
