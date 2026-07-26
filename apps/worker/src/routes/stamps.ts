@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { getFriendByLineUserId, getLineAccounts, jstNow, type Friend } from '@line-crm/db';
 import { LineClient } from '@line-crm/line-sdk';
 import { verifyCallerLineUserId } from '../services/liff-auth.js';
+import { attachTagAndFireSideEffects } from '../services/friend-tag-attach.js';
 import type { Env } from '../index.js';
 
 /**
@@ -101,6 +102,21 @@ async function resolveFriend(
   const friend = await getFriendByLineUserId(env.DB, lineUserId);
   if (!friend) return { status: 'no_friend' };
   return { status: 'ok', friend };
+}
+
+/**
+ * Tag to attach when a stamp is earned, or null when the feature is unconfigured.
+ *
+ * Scanning the in-store QR is the one signal that reliably proves a visit, so
+ * wiring it to a tag is what lets the post-visit follow-up run without staff
+ * remembering to tag by hand. Kept optional (and blank-tolerant) so an unset or
+ * empty binding degrades to the previous no-tag behaviour rather than erroring.
+ */
+export function resolveVisitTagId(env: { STAMP_VISIT_TAG_ID?: string }): string | null {
+  const raw = env.STAMP_VISIT_TAG_ID;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : null;
 }
 
 /** Constant-time-ish compare so the in-store code is not probeable by timing. */
@@ -210,6 +226,20 @@ stampRoutes.post('/api/liff/stamps/claim', async (c) => {
     rewarded = true;
   }
   await persist(c.env.DB, friend, next);
+
+  // A claim means the customer is standing in the shop, so mark the visit. The
+  // helper is idempotent — it only fires side effects (post-visit scenario
+  // enrolment, tag_change event) the first time — so repeat visitors re-stamp
+  // without re-enrolling. Best-effort for the same reason as the pushes below:
+  // the stamp is already committed and must not fail on a tagging error.
+  const visitTagId = resolveVisitTagId(c.env);
+  if (visitTagId) {
+    try {
+      await attachTagAndFireSideEffects(c.env.DB, friend.id, visitTagId);
+    } catch (err) {
+      console.error('stamps: visit tag attach failed', err);
+    }
+  }
 
   // Push notifications are best-effort: the stamp is already committed, so a
   // LINE API failure must not surface as a failed claim.
