@@ -163,7 +163,7 @@ function rewardFlex(rewardsPending: number): Record<string, unknown> {
         { type: 'separator', margin: 'lg' },
         {
           type: 'text',
-          text: 'プレーン・抹茶・キャラメルからお選びいただけます。スタンプカードの画面をスタッフにお見せください。',
+          text: 'プレーン・キャラメルからお選びいただけます。スタンプカードの画面をスタッフにお見せください。',
           size: 'sm',
           color: '#666666',
           wrap: true,
