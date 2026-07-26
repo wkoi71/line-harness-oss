@@ -37,6 +37,8 @@ const NUDGE_AT = 3;
 export interface StampState {
   count: number;
   lastDate: string | null;
+  /** Issue dates of the vouchers still in hand, oldest first. */
+  rewardDates: string[];
   rewardsPending: number;
   rewardsTotal: number;
 }
@@ -58,7 +60,28 @@ function toInt(value: unknown): number {
  * this only ever touches the `stamp_*` keys and tolerates malformed JSON by
  * falling back to an empty card.
  */
-export function readState(metadataJson: string | null | undefined): StampState {
+/**
+ * Voucher issue dates still in hand, oldest first, with expired ones dropped.
+ *
+ * Vouchers earned before per-voucher dates existed have no issue date. Padding
+ * them with today rather than voiding them means an early customer keeps what
+ * they earned; the alternative silently confiscates it on deploy.
+ */
+function readRewardDates(raw: Record<string, unknown>, today: string): string[] {
+  const stored = Array.isArray(raw.stamp_reward_dates)
+    ? raw.stamp_reward_dates.filter((d): d is string => typeof d === 'string' && d.length >= 10)
+    : null;
+  const dates = stored ?? [];
+  if (stored === null) {
+    for (let i = 0; i < toInt(raw.stamp_rewards_pending); i++) dates.push(today);
+  }
+  return dates.filter((d) => {
+    const last = expiryDate(d);
+    return last !== null && today <= last;
+  });
+}
+
+export function readState(metadataJson: string | null | undefined, today: string = businessDate()): StampState {
   let raw: Record<string, unknown> = {};
   try {
     const parsed = JSON.parse(metadataJson || '{}');
@@ -67,10 +90,12 @@ export function readState(metadataJson: string | null | undefined): StampState {
     raw = {};
   }
   const lastDate = raw.stamp_last_date;
+  const rewardDates = readRewardDates(raw, today);
   return {
     count: Math.min(toInt(raw.stamp_count), STAMP_GOAL - 1),
     lastDate: typeof lastDate === 'string' && lastDate ? lastDate : null,
-    rewardsPending: toInt(raw.stamp_rewards_pending),
+    rewardDates,
+    rewardsPending: rewardDates.length,
     rewardsTotal: toInt(raw.stamp_rewards_total),
   };
 }
@@ -88,7 +113,10 @@ export function writeState(metadataJson: string | null | undefined, state: Stamp
     ...raw,
     stamp_count: state.count,
     stamp_last_date: state.lastDate,
-    stamp_rewards_pending: state.rewardsPending,
+    stamp_reward_dates: state.rewardDates,
+    // Kept in sync with the dates array so the admin friend view and any
+    // metadata segment rules keep reading a plain number.
+    stamp_rewards_pending: state.rewardDates.length,
     stamp_rewards_total: state.rewardsTotal,
   });
 }
@@ -144,7 +172,7 @@ async function clientFor(env: Env['Bindings'], friend: Friend): Promise<LineClie
   return token ? new LineClient(token) : null;
 }
 
-function rewardFlex(rewardsPending: number): Record<string, unknown> {
+function rewardFlex(rewardsPending: number, expiresOn: string | null): Record<string, unknown> {
   return {
     type: 'bubble',
     body: {
@@ -176,6 +204,19 @@ function rewardFlex(rewardsPending: number): Record<string, unknown> {
           wrap: true,
           margin: 'lg',
         },
+        ...(expiresOn
+          ? [
+              {
+                type: 'text',
+                text: `有効期限：${expiresOn} まで`,
+                size: 'sm',
+                color: '#C9A227',
+                weight: 'bold',
+                wrap: true,
+                margin: 'md',
+              },
+            ]
+          : []),
       ],
     },
   };
@@ -196,6 +237,8 @@ stampRoutes.get('/api/liff/stamps/me', async (c) => {
     rewardsTotal: state.rewardsTotal,
     stampedToday: state.lastDate === jstDate(),
     displayName: resolved.friend.display_name,
+    // Oldest voucher expires first, and that is the one `redeem` spends.
+    rewardExpiresOn: expiryDate(state.rewardDates[0] ?? null),
     welcome: {
       status: welcomeStatus(welcome),
       issuedDate: welcome.issuedDate,
@@ -257,7 +300,8 @@ stampRoutes.post('/api/liff/stamps/claim', async (c) => {
   let rewarded = false;
   if (next.count >= STAMP_GOAL) {
     next.count = 0;
-    next.rewardsPending = state.rewardsPending + 1;
+    next.rewardDates = [...state.rewardDates, businessDate()];
+    next.rewardsPending = next.rewardDates.length;
     next.rewardsTotal = state.rewardsTotal + 1;
     rewarded = true;
   }
@@ -286,7 +330,7 @@ stampRoutes.post('/api/liff/stamps/claim', async (c) => {
         await client.pushFlexMessage(
           friend.line_user_id,
           'スタンプが満杯になりました',
-          rewardFlex(next.rewardsPending),
+          rewardFlex(next.rewardsPending, expiryDate(next.rewardDates[0] ?? null)),
         );
       } else if (next.count === NUDGE_AT) {
         await client.pushTextMessage(
@@ -322,7 +366,9 @@ stampRoutes.post('/api/liff/stamps/redeem', async (c) => {
   const state = readState(resolved.friend.metadata);
   if (state.rewardsPending <= 0) return c.json({ error: 'no_reward' }, 409);
 
-  const next: StampState = { ...state, rewardsPending: state.rewardsPending - 1 };
+  // Spend the oldest first — that is the one closest to expiring.
+  const rewardDates = state.rewardDates.slice(1);
+  const next: StampState = { ...state, rewardDates, rewardsPending: rewardDates.length };
   await persist(c.env.DB, resolved.friend, next);
   return c.json({ ok: true, count: next.count, goal: STAMP_GOAL, rewardsPending: next.rewardsPending });
 });
