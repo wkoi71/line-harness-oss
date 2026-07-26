@@ -207,6 +207,18 @@ async function handleEvent(
 
     console.log(`[follow] friend.id=${friend.id} friend.line_account_id=${(friend as any).line_account_id}`);
 
+    // Friend-add perk: same-day drink voucher + the first stamp. Granted here
+    // rather than from the LIFF screen so it exists even if the customer never
+    // opens the card, and best-effort so a failure cannot break the follow
+    // handler (welcome messages and scenario enrolment still have to run).
+    try {
+      const { grantWelcomePerk } = await import('../services/welcome-perk.js');
+      const granted = await grantWelcomePerk(db, friend);
+      console.log(`[follow] welcome perk issued=${granted.issued} stamped=${granted.stamped}`);
+    } catch (err) {
+      console.error('[follow] welcome perk failed', err);
+    }
+
     // Set line_account_id for multi-account tracking (always update on follow)
     if (lineAccountId) {
       await db.prepare('UPDATE friends SET line_account_id = ?, updated_at = ? WHERE id = ?')

@@ -521,10 +521,14 @@ async function initStampCard(): Promise<void> {
     showError('mount target #app が見つかりません');
     return;
   }
+  const params = new URLSearchParams(window.location.search);
   const { mountStampCard } = await import('./stamp-card/main.js');
   mountStampCard(container, {
     idToken,
-    code: new URLSearchParams(window.location.search).get('sc'),
+    code: params.get('sc'),
+    // `?welcome=1` は友だち追加直後の案内から開いたときだけ付く。
+    // 「スタンプが1個たまりました」を最初に見せるためのフラグ。
+    welcome: params.get('welcome') === '1',
   });
 }
 
