@@ -10,6 +10,13 @@ import {
   writeWelcome,
   welcomeStatus,
 } from '../services/welcome-perk.js';
+import {
+  comebackStatus,
+  ensureComebackVoucher,
+  readComeback,
+  resolveComebackTagId,
+  writeComeback,
+} from '../services/comeback-perk.js';
 import type { Env } from '../index.js';
 
 /**
@@ -228,8 +235,18 @@ stampRoutes.get('/api/liff/stamps/me', async (c) => {
   if (resolved.status === 'invalid_token') return c.json({ error: 'unauthorized' }, 401);
   if (resolved.status === 'no_friend') return c.json({ error: 'friend_not_found' }, 404);
 
-  const state = readState(resolved.friend.metadata);
-  const welcome = readWelcome(resolved.friend.metadata);
+  const comebackState = await ensureComebackVoucher(
+    c.env.DB,
+    resolved.friend,
+    resolveComebackTagId(c.env),
+  );
+  // ensureComebackVoucher may have just written metadata; re-read so the card
+  // reflects the voucher it issued on this very request.
+  const metadata = comebackState.issuedDate
+    ? writeComeback(resolved.friend.metadata, comebackState)
+    : resolved.friend.metadata;
+  const state = readState(metadata);
+  const welcome = readWelcome(metadata);
   return c.json({
     count: state.count,
     goal: STAMP_GOAL,
@@ -245,7 +262,32 @@ stampRoutes.get('/api/liff/stamps/me', async (c) => {
       usedAt: welcome.usedAt,
       expiresOn: expiryDate(welcome.issuedDate),
     },
+    comeback: {
+      status: comebackStatus(comebackState),
+      issuedDate: comebackState.issuedDate,
+      usedAt: comebackState.usedAt,
+      expiresOn: expiryDate(comebackState.issuedDate),
+    },
   });
+});
+
+/** Burn the comeback voucher. One per lifetime, same as the welcome one. */
+stampRoutes.post('/api/liff/stamps/comeback/redeem', async (c) => {
+  const resolved = await resolveFriend(c, c.env);
+  if (resolved.status === 'invalid_token') return c.json({ error: 'unauthorized' }, 401);
+  if (resolved.status === 'no_friend') return c.json({ error: 'friend_not_found' }, 404);
+
+  const friend = resolved.friend;
+  const state = readComeback(friend.metadata);
+  const status = comebackStatus(state);
+  if (status !== 'usable') return c.json({ error: status }, 409);
+
+  const usedAt = jstNow();
+  await c.env.DB.prepare('UPDATE friends SET metadata = ?, updated_at = ? WHERE id = ?')
+    .bind(writeComeback(friend.metadata, { ...state, usedAt }), usedAt, friend.id)
+    .run();
+
+  return c.json({ ok: true, usedAt });
 });
 
 /**

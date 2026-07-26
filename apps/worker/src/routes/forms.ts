@@ -457,6 +457,26 @@ forms.post('/api/forms/:id/submit', async (c) => {
         }));
       }
 
+      // Answer-driven tags (e.g. "which do you drink" → interest tag). Same
+      // guarded attach as above, so a tag_added scenario fires only the first
+      // time and a re-submit does not re-enrol.
+      {
+        const { parseAnswerTagMap, resolveAnswerTags } = await import('../services/answer-tags.js');
+        const answerTags = resolveAnswerTags(
+          parseAnswerTagMap(c.env.FORM_ANSWER_TAGS),
+          submissionData as Record<string, unknown>,
+        );
+        for (const tagId of answerTags) {
+          if (tagId === form.on_submit_tag_id) continue; // already attached above
+          sideEffects.push(
+            attachTagAndFireSideEffects(db, friendId, tagId, {
+              defaultAccessToken: c.env.LINE_CHANNEL_ACCESS_TOKEN,
+              workerUrl: c.env.WORKER_URL,
+            }),
+          );
+        }
+      }
+
       // Enroll in scenario
       if (form.on_submit_scenario_id) {
         sideEffects.push(enrollFriendInScenario(db, friendId, form.on_submit_scenario_id));

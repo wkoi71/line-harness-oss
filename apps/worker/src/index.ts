@@ -135,6 +135,12 @@ export type Env = {
     // scenario start without staff tagging by hand. Optional: unset means the
     // stamp simply does not tag, which is the pre-existing behaviour.
     STAMP_VISIT_TAG_ID?: string;
+    // Form answer → tag mapping (see services/answer-tags.ts). Optional: unset
+    // means answers are still saved to metadata but never become tags.
+    FORM_ANSWER_TAGS?: string;
+    // Tag that makes a lapsed customer eligible for the comeback voucher
+    // (see services/comeback-perk.ts). Unset disables the voucher entirely.
+    COMEBACK_TAG_ID?: string;
   };
   Variables: {
     staff: { id: string; name: string; role: 'owner' | 'admin' | 'staff' };

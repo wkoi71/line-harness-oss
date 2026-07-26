@@ -10,11 +10,11 @@ export interface StampCardContext {
   welcome?: boolean;
 }
 
-/** Friend-add drink voucher. 'expired' means it was never used on its day. */
-type WelcomeStatus = 'none' | 'usable' | 'used' | 'expired';
+/** One-per-lifetime voucher. 'expired' means the 30-day window closed unused. */
+type CouponStatus = 'none' | 'usable' | 'used' | 'expired';
 
-interface WelcomeState {
-  status: WelcomeStatus;
+interface CouponState {
+  status: CouponStatus;
   issuedDate: string | null;
   usedAt: string | null;
   expiresOn: string | null;
@@ -29,7 +29,8 @@ interface CardState {
   displayName: string | null;
   /** Expiry of the voucher that will be spent next (the oldest one). */
   rewardExpiresOn?: string | null;
-  welcome?: WelcomeState;
+  welcome?: CouponState;
+  comeback?: CouponState;
 }
 
 type Banner =
@@ -214,6 +215,104 @@ function ScallopFooter(): JSX.Element {
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
+/**
+ * A one-per-lifetime voucher (friend-add or comeback). Renders nothing when the
+ * customer was never issued one, and greys out once used or expired so the
+ * history stays visible instead of the card silently vanishing.
+ */
+function CouponCard({
+  state,
+  label,
+  title,
+  note,
+  busy,
+  onRedeem,
+}: {
+  state: CouponState | undefined;
+  label: string;
+  title: string;
+  note: string;
+  busy: boolean;
+  onRedeem: () => Promise<void>;
+}): JSX.Element | null {
+  if (!state || state.status === 'none') return null;
+  const live = state.status === 'usable';
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        background: live ? 'linear-gradient(135deg,#FFF3D2,#FBE3AC)' : '#F4F0E7',
+        border: `2px solid ${live ? GOLD : '#DFD6C2'}`,
+        borderRadius: 18,
+        padding: '18px 16px',
+        opacity: live ? 1 : 0.72,
+      }}
+    >
+      <p style={{ fontSize: 12, color: live ? GOLD_DEEP : MUTED, fontWeight: 800, margin: 0, letterSpacing: '.04em' }}>
+        {state.status === 'usable' && label}
+        {state.status === 'used' && '使用済みのクーポン'}
+        {state.status === 'expired' && '有効期限が切れています'}
+      </p>
+      <p
+        style={{
+          fontSize: 22,
+          fontWeight: 800,
+          margin: '6px 0 0',
+          textDecoration: live ? 'none' : 'line-through',
+          color: live ? INK : MUTED,
+        }}
+      >
+        {title}
+      </p>
+
+      {live && (
+        <>
+          <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: '#6A5A34' }}>{note}</p>
+          {state.expiresOn && (
+            <p style={{ fontSize: 13, margin: '8px 0 0', color: GOLD_DEEP, fontWeight: 700 }}>
+              有効期限：{state.expiresOn} まで
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void onRedeem()}
+            disabled={busy}
+            style={{
+              width: '100%',
+              marginTop: 14,
+              padding: '13px',
+              border: 'none',
+              borderRadius: 12,
+              background: busy ? '#C9B27C' : INK,
+              color: '#FFF7E6',
+              fontSize: 15,
+              fontWeight: 800,
+              fontFamily: 'inherit',
+            }}
+          >
+            使用済みにする（スタッフが押します）
+          </button>
+          <p style={{ fontSize: 12, color: MUTED, margin: '8px 0 0', textAlign: 'center' }}>
+            一度押すと二度と使えません
+          </p>
+        </>
+      )}
+
+      {state.status === 'used' && (
+        <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: MUTED }}>
+          {state.usedAt?.slice(0, 10)} にご利用いただきました。ありがとうございます🌙
+        </p>
+      )}
+      {state.status === 'expired' && (
+        <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: MUTED }}>
+          このクーポンは{state.expiresOn}までのご利用でした。
+          スタンプは5つ貯まると無料券になりますので、ぜひお使いください。
+        </p>
+      )}
+    </div>
+  );
+}
+
 function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
   const [card, setCard] = useState<CardState | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
@@ -294,6 +393,19 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
     setBusy(false);
   }, [ctx.idToken, load]);
 
+  const redeemComeback = useCallback(async () => {
+    if (!window.confirm('カムバッククーポンを使用します。\n一度使うと二度と使えません。スタッフの前で押してください。\n\nよろしいですか？')) return;
+    setBusy(true);
+    const res = await api('/api/liff/stamps/comeback/redeem', ctx.idToken, {});
+    setBanner(
+      res.ok
+        ? { kind: 'welcomeUsed' }
+        : { kind: 'error', message: '使用できませんでした。スタッフにお声がけください。' },
+    );
+    await load();
+    setBusy(false);
+  }, [ctx.idToken, load]);
+
   useEffect(() => {
     void (async () => {
       await load();
@@ -322,7 +434,7 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
       case 'welcome':
         return { text: `友だち追加ありがとうございます🌙 スタンプ1個をプレゼントしました！`, tone: 'good' };
       case 'welcomeUsed':
-        return { text: 'ドリンク1杯無料券を使用しました。ごゆっくりどうぞ🌙', tone: 'good' };
+        return { text: 'クーポンを使用しました。ごゆっくりどうぞ🌙', tone: 'good' };
       case 'error':
         return { text: banner.message, tone: 'warn' };
     }
@@ -381,94 +493,23 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
           </div>
         )}
 
-        {/* friend-add drink voucher — same-day only, one per lifetime */}
-        {card?.welcome && card.welcome.status !== 'none' && (
-          <div
-            style={{
-              marginTop: 14,
-              background:
-                card.welcome.status === 'usable' ? 'linear-gradient(135deg,#FFF3D2,#FBE3AC)' : '#F4F0E7',
-              border: `2px solid ${card.welcome.status === 'usable' ? GOLD : '#DFD6C2'}`,
-              borderRadius: 18,
-              padding: '18px 16px',
-              position: 'relative',
-              opacity: card.welcome.status === 'usable' ? 1 : 0.72,
-            }}
-          >
-            <p
-              style={{
-                fontSize: 12,
-                color: card.welcome.status === 'usable' ? GOLD_DEEP : MUTED,
-                fontWeight: 800,
-                margin: 0,
-                letterSpacing: '.04em',
-              }}
-            >
-              {card.welcome.status === 'usable' && '友だち追加ありがとうクーポン'}
-              {card.welcome.status === 'used' && '使用済みのクーポン'}
-              {card.welcome.status === 'expired' && '有効期限が切れています'}
-            </p>
-            <p
-              style={{
-                fontSize: 22,
-                fontWeight: 800,
-                margin: '6px 0 0',
-                textDecoration: card.welcome.status === 'usable' ? 'none' : 'line-through',
-                color: card.welcome.status === 'usable' ? INK : MUTED,
-              }}
-            >
-              ドリンク1杯 無料
-            </p>
-
-            {card.welcome.status === 'usable' && (
-              <>
-                <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: '#6A5A34' }}>
-                  球磨焼酎カクテルも、ノンアルコールも対象です。<br />
-                  <strong>本日からお使いいただけます。</strong>ご注文時にこの画面をスタッフにお見せください。
-                </p>
-                {card.welcome.expiresOn && (
-                  <p style={{ fontSize: 13, margin: '8px 0 0', color: GOLD_DEEP, fontWeight: 700 }}>
-                    有効期限：{card.welcome.expiresOn} まで
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void redeemWelcome()}
-                  disabled={busy}
-                  style={{
-                    width: '100%',
-                    marginTop: 14,
-                    padding: '13px',
-                    border: 'none',
-                    borderRadius: 12,
-                    background: busy ? '#C9B27C' : INK,
-                    color: '#FFF7E6',
-                    fontSize: 15,
-                    fontWeight: 800,
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  使用済みにする（スタッフが押します）
-                </button>
-                <p style={{ fontSize: 12, color: MUTED, margin: '8px 0 0', textAlign: 'center' }}>
-                  一度押すと二度と使えません
-                </p>
-              </>
-            )}
-
-            {card.welcome.status === 'used' && (
-              <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: MUTED }}>
-                {card.welcome.usedAt?.slice(0, 10)} にご利用いただきました。ありがとうございます🌙
-              </p>
-            )}
-            {card.welcome.status === 'expired' && (
-              <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: MUTED }}>
-                このクーポンは{card.welcome.expiresOn}までのご利用でした。
-                スタンプは5つ貯まると無料券になりますので、ぜひお使いください。
-              </p>
-            )}
-          </div>
-        )}
+        {/* one-per-lifetime vouchers: friend-add and comeback */}
+        <CouponCard
+          state={card?.welcome}
+          label="友だち追加ありがとうクーポン"
+          title="ドリンク1杯 無料"
+          note="球磨焼酎カクテルも、ノンアルコールも対象です。ご注文時にこの画面をスタッフにお見せください。"
+          busy={busy}
+          onRedeem={redeemWelcome}
+        />
+        <CouponCard
+          state={card?.comeback}
+          label="お久しぶりの方へ｜カムバッククーポン"
+          title="ドリンク1杯 無料"
+          note="またお会いできて嬉しいです。ご注文時にこの画面をスタッフにお見せください。"
+          busy={busy}
+          onRedeem={redeemComeback}
+        />
 
         {/* stamp card panel */}
         <div
