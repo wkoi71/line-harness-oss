@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { businessDate, readWelcome, writeWelcome, welcomeStatus } from './welcome-perk.js';
+import { businessDate, expiryDate, readWelcome, writeWelcome, welcomeStatus } from './welcome-perk.js';
 
 describe('welcome-perk: businessDate', () => {
   it('keeps late-night trading on the same business day', () => {
@@ -53,12 +53,32 @@ describe('welcome-perk: writeWelcome', () => {
   });
 });
 
+describe('welcome-perk: expiryDate', () => {
+  it('counts the issue day as day 1 of the 30-day window', () => {
+    expect(expiryDate('2026-07-26')).toBe('2026-08-24');
+  });
+
+  it('crosses month and year boundaries', () => {
+    expect(expiryDate('2026-12-20')).toBe('2027-01-18');
+  });
+
+  it('returns null for a missing or unparseable date', () => {
+    expect(expiryDate(null)).toBeNull();
+    expect(expiryDate('nonsense')).toBeNull();
+  });
+});
+
 describe('welcome-perk: welcomeStatus', () => {
   const issued = { issuedDate: '2026-07-26', usedAt: null, stampGiven: true };
 
-  it('is usable only on the issuing business day', () => {
-    expect(welcomeStatus(issued, '2026-07-26')).toBe('usable');
-    expect(welcomeStatus(issued, '2026-07-27')).toBe('expired');
+  it('is usable from the issuing day through the 30th day', () => {
+    expect(welcomeStatus(issued, '2026-07-26')).toBe('usable'); // 追加当日
+    expect(welcomeStatus(issued, '2026-08-10')).toBe('usable');
+    expect(welcomeStatus(issued, '2026-08-24')).toBe('usable'); // 期限当日
+  });
+
+  it('expires the day after the window closes', () => {
+    expect(welcomeStatus(issued, '2026-08-25')).toBe('expired');
   });
 
   it('stays used forever, even on the day it was issued', () => {
