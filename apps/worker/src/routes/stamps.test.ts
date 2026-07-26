@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readState, writeState, jstDate, STAMP_GOAL } from './stamps.js';
+import { readState, writeState, jstDate, resolveVisitTagId, STAMP_GOAL } from './stamps.js';
 
 describe('stamps: readState', () => {
   it('treats missing/empty metadata as an empty card', () => {
@@ -80,6 +80,28 @@ describe('stamps: jstDate', () => {
   it('extracts the calendar date used for the one-per-day rule', () => {
     expect(jstDate('2026-07-25T23:59:59+09:00')).toBe('2026-07-25');
     expect(jstDate('2026-07-26T00:00:01+09:00')).toBe('2026-07-26');
+  });
+});
+
+describe('stamps: resolveVisitTagId', () => {
+  it('returns the configured tag id', () => {
+    expect(resolveVisitTagId({ STAMP_VISIT_TAG_ID: 'tag-123' })).toBe('tag-123');
+  });
+
+  it('treats unset, blank and whitespace-only config as disabled', () => {
+    // A blank binding must not reach the tag helper — an empty tag_id would
+    // insert a dangling friend_tags row rather than fail loudly.
+    expect(resolveVisitTagId({})).toBeNull();
+    expect(resolveVisitTagId({ STAMP_VISIT_TAG_ID: '' })).toBeNull();
+    expect(resolveVisitTagId({ STAMP_VISIT_TAG_ID: '   ' })).toBeNull();
+  });
+
+  it('trims surrounding whitespace from a pasted value', () => {
+    expect(resolveVisitTagId({ STAMP_VISIT_TAG_ID: '  tag-123\n' })).toBe('tag-123');
+  });
+
+  it('ignores a non-string binding', () => {
+    expect(resolveVisitTagId({ STAMP_VISIT_TAG_ID: 123 as unknown as string })).toBeNull();
   });
 });
 

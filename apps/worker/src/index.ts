@@ -130,6 +130,11 @@ export type Env = {
     // unset disables earning and redeeming (both return 403), so a deploy that
     // forgets it fails closed instead of handing out free stamps.
     STAMP_QR_CODE?: string;
+    // Stamp card — tag attached to the friend on a successful claim. Scanning the
+    // in-store QR is proof of a visit, so this is what lets the post-visit
+    // scenario start without staff tagging by hand. Optional: unset means the
+    // stamp simply does not tag, which is the pre-existing behaviour.
+    STAMP_VISIT_TAG_ID?: string;
   };
   Variables: {
     staff: { id: string; name: string; role: 'owner' | 'admin' | 'staff' };
