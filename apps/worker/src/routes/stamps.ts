@@ -5,6 +5,7 @@ import { verifyCallerLineUserId } from '../services/liff-auth.js';
 import { attachTagAndFireSideEffects } from '../services/friend-tag-attach.js';
 import {
   businessDate,
+  expiryDate,
   readWelcome,
   writeWelcome,
   welcomeStatus,
@@ -199,6 +200,7 @@ stampRoutes.get('/api/liff/stamps/me', async (c) => {
       status: welcomeStatus(welcome),
       issuedDate: welcome.issuedDate,
       usedAt: welcome.usedAt,
+      expiresOn: expiryDate(welcome.issuedDate),
     },
   });
 });

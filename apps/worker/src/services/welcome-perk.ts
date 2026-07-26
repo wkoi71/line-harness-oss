@@ -14,6 +14,14 @@ import { jstNow, type Friend } from '@line-crm/db';
 /** Hour (JST) at which a business day rolls over. */
 const DAY_ROLLOVER_HOUR = 5;
 
+/**
+ * Days the voucher stays usable, counted from (and including) the day it was
+ * issued. Someone who joins at the counter can use it that same night; someone
+ * who joins from Instagram has a month to come in. The 25-day reminder in the
+ * welcome scenario lands five days before this runs out.
+ */
+export const VALID_DAYS = 30;
+
 export interface WelcomeState {
   /** Business date the voucher was issued for, or null when never issued. */
   issuedDate: string | null;
@@ -70,11 +78,22 @@ export function writeWelcome(metadataJson: string | null | undefined, state: Wel
 
 export type WelcomeStatus = 'none' | 'usable' | 'used' | 'expired';
 
+/** Last business date the voucher can be used, or null when never issued. */
+export function expiryDate(issuedDate: string | null): string | null {
+  if (!issuedDate) return null;
+  const d = new Date(`${issuedDate}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + VALID_DAYS - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 /** What the customer should see for the voucher right now. */
 export function welcomeStatus(state: WelcomeState, today: string = businessDate()): WelcomeStatus {
   if (!state.issuedDate) return 'none';
   if (state.usedAt) return 'used';
-  return state.issuedDate === today ? 'usable' : 'expired';
+  const last = expiryDate(state.issuedDate);
+  if (!last) return 'expired';
+  return today <= last ? 'usable' : 'expired';
 }
 
 /**
@@ -99,7 +118,14 @@ export async function grantWelcomePerk(
   const raw = parseMetadata(friend.metadata);
   const next: Record<string, unknown> = { ...raw };
 
-  if (issued) next.welcome_issued_date = businessDate();
+  if (issued) {
+    next.welcome_issued_date = businessDate();
+    // Write the null explicitly. The welcome scenario's 25-day reminder is
+    // gated on `metadata_equals {welcome_used_at: null}`, and that check is a
+    // strict comparison — an absent key reads as undefined and would never
+    // match, silently skipping the reminder for everyone.
+    next.welcome_used_at = null;
+  }
   if (stamped) {
     const current = Number(raw.stamp_count);
     next.stamp_count = (Number.isFinite(current) && current > 0 ? Math.floor(current) : 0) + 1;

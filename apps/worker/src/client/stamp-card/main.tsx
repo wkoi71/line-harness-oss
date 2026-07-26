@@ -17,6 +17,7 @@ interface WelcomeState {
   status: WelcomeStatus;
   issuedDate: string | null;
   usedAt: string | null;
+  expiresOn: string | null;
 }
 
 interface CardState {
@@ -401,7 +402,7 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
                 letterSpacing: '.04em',
               }}
             >
-              {card.welcome.status === 'usable' && '本日限り｜友だち追加ありがとうクーポン'}
+              {card.welcome.status === 'usable' && '友だち追加ありがとうクーポン'}
               {card.welcome.status === 'used' && '使用済みのクーポン'}
               {card.welcome.status === 'expired' && '有効期限が切れています'}
             </p>
@@ -421,8 +422,13 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
               <>
                 <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: '#6A5A34' }}>
                   球磨焼酎カクテルも、ノンアルコールも対象です。<br />
-                  <strong>本日のご来店でのみ</strong>ご利用いただけます。ご注文時にこの画面をスタッフにお見せください。
+                  <strong>本日からお使いいただけます。</strong>ご注文時にこの画面をスタッフにお見せください。
                 </p>
+                {card.welcome.expiresOn && (
+                  <p style={{ fontSize: 13, margin: '8px 0 0', color: GOLD_DEEP, fontWeight: 700 }}>
+                    有効期限：{card.welcome.expiresOn} まで
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => void redeemWelcome()}
@@ -455,7 +461,7 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
             )}
             {card.welcome.status === 'expired' && (
               <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: MUTED }}>
-                このクーポンは友だち追加当日（{card.welcome.issuedDate}）限定でした。
+                このクーポンは{card.welcome.expiresOn}までのご利用でした。
                 スタンプは5つ貯まると無料券になりますので、ぜひお使いください。
               </p>
             )}
