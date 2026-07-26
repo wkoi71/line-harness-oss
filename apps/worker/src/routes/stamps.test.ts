@@ -7,6 +7,7 @@ describe('stamps: readState', () => {
       expect(readState(input)).toEqual({
         count: 0,
         lastDate: null,
+        rewardDates: [],
         rewardsPending: 0,
         rewardsTotal: 0,
       });
@@ -17,6 +18,7 @@ describe('stamps: readState', () => {
     expect(readState('not json{')).toEqual({
       count: 0,
       lastDate: null,
+      rewardDates: [],
       rewardsPending: 0,
       rewardsTotal: 0,
     });
@@ -26,12 +28,14 @@ describe('stamps: readState', () => {
     const json = JSON.stringify({
       stamp_count: 3,
       stamp_last_date: '2026-07-25',
+      stamp_reward_dates: ['2026-07-20'],
       stamp_rewards_pending: 1,
       stamp_rewards_total: 4,
     });
-    expect(readState(json)).toEqual({
+    expect(readState(json, '2026-07-25')).toEqual({
       count: 3,
       lastDate: '2026-07-25',
+      rewardDates: ['2026-07-20'],
       rewardsPending: 1,
       rewardsTotal: 4,
     });
@@ -56,7 +60,7 @@ describe('stamps: writeState', () => {
   it('preserves unrelated metadata keys written by other features', () => {
     const before = JSON.stringify({ visit_date: '2026-08-01', customer_name: '山田' });
     const after = JSON.parse(
-      writeState(before, { count: 2, lastDate: '2026-07-25', rewardsPending: 0, rewardsTotal: 0 }),
+      writeState(before, { count: 2, lastDate: '2026-07-25', rewardDates: [], rewardsPending: 0, rewardsTotal: 0 }),
     );
     expect(after.visit_date).toBe('2026-08-01');
     expect(after.customer_name).toBe('山田');
@@ -64,13 +68,19 @@ describe('stamps: writeState', () => {
   });
 
   it('round-trips through readState', () => {
-    const state = { count: 4, lastDate: '2026-07-25', rewardsPending: 2, rewardsTotal: 7 };
-    expect(readState(writeState('{}', state))).toEqual(state);
+    const state = {
+      count: 4,
+      lastDate: '2026-07-25',
+      rewardDates: ['2026-07-24', '2026-07-25'],
+      rewardsPending: 2,
+      rewardsTotal: 7,
+    };
+    expect(readState(writeState('{}', state), '2026-07-25')).toEqual(state);
   });
 
   it('does not throw when the existing metadata is malformed', () => {
     const after = JSON.parse(
-      writeState('broken{', { count: 1, lastDate: null, rewardsPending: 0, rewardsTotal: 0 }),
+      writeState('broken{', { count: 1, lastDate: null, rewardDates: [], rewardsPending: 0, rewardsTotal: 0 }),
     );
     expect(after.stamp_count).toBe(1);
   });
@@ -80,6 +90,51 @@ describe('stamps: jstDate', () => {
   it('extracts the calendar date used for the one-per-day rule', () => {
     expect(jstDate('2026-07-25T23:59:59+09:00')).toBe('2026-07-25');
     expect(jstDate('2026-07-26T00:00:01+09:00')).toBe('2026-07-26');
+  });
+});
+
+describe('stamps: 無料券の30日期限', () => {
+  const issued = (dates: string[], extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ stamp_reward_dates: dates, stamp_rewards_total: dates.length, ...extra });
+
+  it('期限内の券だけを数える', () => {
+    const s = readState(issued(['2026-07-01', '2026-07-20']), '2026-07-26');
+    expect(s.rewardsPending).toBe(2);
+    expect(s.rewardDates).toEqual(['2026-07-01', '2026-07-20']);
+  });
+
+  it('30日を過ぎた券は落とす（発行日から30日目までが有効）', () => {
+    expect(readState(issued(['2026-07-01']), '2026-07-30').rewardsPending).toBe(1);
+    expect(readState(issued(['2026-07-01']), '2026-07-31').rewardsPending).toBe(0);
+  });
+
+  it('期限切れだけを落として、生きている券は残す', () => {
+    const s = readState(issued(['2026-06-01', '2026-07-20']), '2026-07-26');
+    expect(s.rewardDates).toEqual(['2026-07-20']);
+    expect(s.rewardsPending).toBe(1);
+  });
+
+  it('発行日を持たない古い券は没収せず、当日発行として扱う', () => {
+    // 日付を持つ前に獲得した券。ここで消すと、貯めてくれた人から
+    // デプロイした瞬間に取り上げることになる。
+    const legacy = JSON.stringify({ stamp_rewards_pending: 2, stamp_rewards_total: 2 });
+    const s = readState(legacy, '2026-07-26');
+    expect(s.rewardsPending).toBe(2);
+    expect(s.rewardDates).toEqual(['2026-07-26', '2026-07-26']);
+  });
+
+  it('writeState は日付と枚数を同期させる', () => {
+    const after = JSON.parse(
+      writeState('{}', {
+        count: 0,
+        lastDate: null,
+        rewardDates: ['2026-07-20'],
+        rewardsPending: 99, // ずれていても日付の数が正
+        rewardsTotal: 3,
+      }),
+    );
+    expect(after.stamp_reward_dates).toEqual(['2026-07-20']);
+    expect(after.stamp_rewards_pending).toBe(1);
   });
 });
 
