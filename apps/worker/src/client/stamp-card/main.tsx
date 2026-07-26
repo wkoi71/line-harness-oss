@@ -6,6 +6,17 @@ export interface StampCardContext {
   idToken: string;
   /** In-store code lifted from the QR (`?sc=`). Absent when opened from the rich menu. */
   code: string | null;
+  /** Opened from the friend-add message (`?welcome=1`) — lead with the first stamp. */
+  welcome?: boolean;
+}
+
+/** Friend-add drink voucher. 'expired' means it was never used on its day. */
+type WelcomeStatus = 'none' | 'usable' | 'used' | 'expired';
+
+interface WelcomeState {
+  status: WelcomeStatus;
+  issuedDate: string | null;
+  usedAt: string | null;
 }
 
 interface CardState {
@@ -15,6 +26,7 @@ interface CardState {
   rewardsTotal: number;
   stampedToday: boolean;
   displayName: string | null;
+  welcome?: WelcomeState;
 }
 
 type Banner =
@@ -22,6 +34,8 @@ type Banner =
   | { kind: 'rewarded'; rewardsPending: number }
   | { kind: 'already' }
   | { kind: 'redeemed'; rewardsPending: number }
+  | { kind: 'welcome'; count: number }
+  | { kind: 'welcomeUsed' }
   | { kind: 'error'; message: string };
 
 // ─── Warm "candle" palette (matches the YORU. reference art) ───────────────
@@ -262,12 +276,34 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
     setBusy(false);
   }, [ctx.code, ctx.idToken, load]);
 
+  const redeemWelcome = useCallback(async () => {
+    // Deliberately blunt wording: this is one voucher per lifetime, so a
+    // mis-tap at home would be unrecoverable.
+    if (!window.confirm('ドリンク1杯無料券を使用します。\n一度使うと二度と使えません。スタッフの前で押してください。\n\nよろしいですか？')) return;
+    setBusy(true);
+    const res = await api('/api/liff/stamps/welcome/redeem', ctx.idToken, {});
+    if (res.ok) {
+      setBanner({ kind: 'welcomeUsed' });
+    } else {
+      setBanner({ kind: 'error', message: '使用できませんでした。スタッフにお声がけください。' });
+    }
+    await load();
+    setBusy(false);
+  }, [ctx.idToken, load]);
+
   useEffect(() => {
     void (async () => {
       await load();
       await claim();
     })();
   }, [load, claim]);
+
+  // Landing here straight from the friend-add message: celebrate the first
+  // stamp instead of showing the generic "scan the QR" copy.
+  useEffect(() => {
+    if (!card || banner || !ctx.welcome) return;
+    setBanner({ kind: 'welcome', count: card.count });
+  }, [card, banner, ctx.welcome]);
 
   const bannerText = ((): { text: string; tone: 'good' | 'warn' } | null => {
     if (!banner) return null;
@@ -280,6 +316,10 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
         return { text: '本日はスタンプ済みです。またのご来店をお待ちしています🌙', tone: 'warn' };
       case 'redeemed':
         return { text: `無料券を1枚使用しました。残り${banner.rewardsPending}枚です`, tone: 'good' };
+      case 'welcome':
+        return { text: `友だち追加ありがとうございます🌙 スタンプ1個をプレゼントしました！`, tone: 'good' };
+      case 'welcomeUsed':
+        return { text: 'ドリンク1杯無料券を使用しました。ごゆっくりどうぞ🌙', tone: 'good' };
       case 'error':
         return { text: banner.message, tone: 'warn' };
     }
@@ -335,6 +375,90 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
             }}
           >
             {bannerText.text}
+          </div>
+        )}
+
+        {/* friend-add drink voucher — same-day only, one per lifetime */}
+        {card?.welcome && card.welcome.status !== 'none' && (
+          <div
+            style={{
+              marginTop: 14,
+              background:
+                card.welcome.status === 'usable' ? 'linear-gradient(135deg,#FFF3D2,#FBE3AC)' : '#F4F0E7',
+              border: `2px solid ${card.welcome.status === 'usable' ? GOLD : '#DFD6C2'}`,
+              borderRadius: 18,
+              padding: '18px 16px',
+              position: 'relative',
+              opacity: card.welcome.status === 'usable' ? 1 : 0.72,
+            }}
+          >
+            <p
+              style={{
+                fontSize: 12,
+                color: card.welcome.status === 'usable' ? GOLD_DEEP : MUTED,
+                fontWeight: 800,
+                margin: 0,
+                letterSpacing: '.04em',
+              }}
+            >
+              {card.welcome.status === 'usable' && '本日限り｜友だち追加ありがとうクーポン'}
+              {card.welcome.status === 'used' && '使用済みのクーポン'}
+              {card.welcome.status === 'expired' && '有効期限が切れています'}
+            </p>
+            <p
+              style={{
+                fontSize: 22,
+                fontWeight: 800,
+                margin: '6px 0 0',
+                textDecoration: card.welcome.status === 'usable' ? 'none' : 'line-through',
+                color: card.welcome.status === 'usable' ? INK : MUTED,
+              }}
+            >
+              ドリンク1杯 無料
+            </p>
+
+            {card.welcome.status === 'usable' && (
+              <>
+                <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: '#6A5A34' }}>
+                  球磨焼酎カクテルも、ノンアルコールも対象です。<br />
+                  <strong>本日のご来店でのみ</strong>ご利用いただけます。ご注文時にこの画面をスタッフにお見せください。
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void redeemWelcome()}
+                  disabled={busy}
+                  style={{
+                    width: '100%',
+                    marginTop: 14,
+                    padding: '13px',
+                    border: 'none',
+                    borderRadius: 12,
+                    background: busy ? '#C9B27C' : INK,
+                    color: '#FFF7E6',
+                    fontSize: 15,
+                    fontWeight: 800,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  使用済みにする（スタッフが押します）
+                </button>
+                <p style={{ fontSize: 12, color: MUTED, margin: '8px 0 0', textAlign: 'center' }}>
+                  一度押すと二度と使えません
+                </p>
+              </>
+            )}
+
+            {card.welcome.status === 'used' && (
+              <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: MUTED }}>
+                {card.welcome.usedAt?.slice(0, 10)} にご利用いただきました。ありがとうございます🌙
+              </p>
+            )}
+            {card.welcome.status === 'expired' && (
+              <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: MUTED }}>
+                このクーポンは友だち追加当日（{card.welcome.issuedDate}）限定でした。
+                スタンプは5つ貯まると無料券になりますので、ぜひお使いください。
+              </p>
+            )}
           </div>
         )}
 

@@ -3,6 +3,12 @@ import { getFriendByLineUserId, getLineAccounts, jstNow, type Friend } from '@li
 import { LineClient } from '@line-crm/line-sdk';
 import { verifyCallerLineUserId } from '../services/liff-auth.js';
 import { attachTagAndFireSideEffects } from '../services/friend-tag-attach.js';
+import {
+  businessDate,
+  readWelcome,
+  writeWelcome,
+  welcomeStatus,
+} from '../services/welcome-perk.js';
 import type { Env } from '../index.js';
 
 /**
@@ -181,6 +187,7 @@ stampRoutes.get('/api/liff/stamps/me', async (c) => {
   if (resolved.status === 'no_friend') return c.json({ error: 'friend_not_found' }, 404);
 
   const state = readState(resolved.friend.metadata);
+  const welcome = readWelcome(resolved.friend.metadata);
   return c.json({
     count: state.count,
     goal: STAMP_GOAL,
@@ -188,7 +195,34 @@ stampRoutes.get('/api/liff/stamps/me', async (c) => {
     rewardsTotal: state.rewardsTotal,
     stampedToday: state.lastDate === jstDate(),
     displayName: resolved.friend.display_name,
+    welcome: {
+      status: welcomeStatus(welcome),
+      issuedDate: welcome.issuedDate,
+      usedAt: welcome.usedAt,
+    },
   });
+});
+
+/**
+ * Burn the friend-add drink voucher. One per lifetime: once `usedAt` is set it
+ * is never cleared, so re-adding the account cannot re-arm it.
+ */
+stampRoutes.post('/api/liff/stamps/welcome/redeem', async (c) => {
+  const resolved = await resolveFriend(c, c.env);
+  if (resolved.status === 'invalid_token') return c.json({ error: 'unauthorized' }, 401);
+  if (resolved.status === 'no_friend') return c.json({ error: 'friend_not_found' }, 404);
+
+  const friend = resolved.friend;
+  const welcome = readWelcome(friend.metadata);
+  const status = welcomeStatus(welcome);
+  if (status !== 'usable') return c.json({ error: status }, 409);
+
+  const usedAt = jstNow();
+  await c.env.DB.prepare('UPDATE friends SET metadata = ?, updated_at = ? WHERE id = ?')
+    .bind(writeWelcome(friend.metadata, { ...welcome, usedAt }), usedAt, friend.id)
+    .run();
+
+  return c.json({ ok: true, usedAt, today: businessDate() });
 });
 
 /** Earn one stamp. Requires the in-store code and is capped at one per JST day. */
