@@ -418,7 +418,7 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
               バスクチーズケーキ 無料券 ×{card.rewardsPending}
             </p>
             <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: '#6A5A34' }}>
-              プレーン・抹茶・キャラメルからお選びいただけます。ご注文時にこの画面をスタッフにお見せください。
+              プレーン・キャラメルからお選びいただけます。ご注文時にこの画面をスタッフにお見せください。
             </p>
             <button
               type="button"
