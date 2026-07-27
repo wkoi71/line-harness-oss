@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { businessDate, expiryDate, readWelcome, writeWelcome, welcomeStatus } from './welcome-perk.js';
+import { businessDate, displayStatus, expiryDate, readWelcome, writeWelcome, welcomeStatus } from './welcome-perk.js';
 
 describe('welcome-perk: businessDate', () => {
   it('keeps late-night trading on the same business day', () => {
@@ -65,6 +65,34 @@ describe('welcome-perk: expiryDate', () => {
   it('returns null for a missing or unparseable date', () => {
     expect(expiryDate(null)).toBeNull();
     expect(expiryDate('nonsense')).toBeNull();
+  });
+});
+
+describe('welcome-perk: displayStatus', () => {
+  const usedTonight = '2026-07-27T01:30:00+09:00'; // 深夜1時半＝営業日は7/26
+
+  it('keeps a used voucher on screen for the rest of that business day', () => {
+    // 使った本人と、店頭で確認するスタッフのため。日付が変わっても
+    // まだ同じ営業日（朝5時まで）なら残す。
+    expect(displayStatus('used', usedTonight, '2026-07-26')).toBe('used');
+  });
+
+  it('hides it from the next business day', () => {
+    expect(displayStatus('used', usedTonight, '2026-07-27')).toBe('none');
+  });
+
+  it('hides expired vouchers outright', () => {
+    // 期限切れは見せても何もできない。
+    expect(displayStatus('expired', null, '2026-07-27')).toBe('none');
+  });
+
+  it('leaves usable and none untouched', () => {
+    expect(displayStatus('usable', null, '2026-07-27')).toBe('usable');
+    expect(displayStatus('none', null, '2026-07-27')).toBe('none');
+  });
+
+  it('hides a used voucher with no timestamp rather than showing it forever', () => {
+    expect(displayStatus('used', null, '2026-07-27')).toBe('none');
   });
 });
 

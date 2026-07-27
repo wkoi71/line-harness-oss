@@ -87,6 +87,28 @@ export function expiryDate(issuedDate: string | null): string | null {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Status to actually render, as opposed to the true state.
+ *
+ * A used voucher stays on screen for the rest of that business day so staff can
+ * confirm at the counter that it really was redeemed, and so the customer is not
+ * left wondering whether it ever existed. After that it disappears: the stamp
+ * card is the point of the screen, and spent vouchers would otherwise pile up
+ * underneath it forever.
+ *
+ * Expired vouchers are hidden outright — there is nothing to be done with one,
+ * so showing it only leaves a bad taste.
+ */
+export function displayStatus(
+  status: WelcomeStatus,
+  usedAt: string | null,
+  today: string = businessDate(),
+): WelcomeStatus {
+  if (status === 'expired') return 'none';
+  if (status === 'used') return usedAt && businessDate(usedAt) === today ? 'used' : 'none';
+  return status;
+}
+
 /** What the customer should see for the voucher right now. */
 export function welcomeStatus(state: WelcomeState, today: string = businessDate()): WelcomeStatus {
   if (!state.issuedDate) return 'none';
