@@ -5,6 +5,7 @@ import { verifyCallerLineUserId } from '../services/liff-auth.js';
 import { attachTagAndFireSideEffects } from '../services/friend-tag-attach.js';
 import {
   businessDate,
+  displayStatus,
   expiryDate,
   readWelcome,
   writeWelcome,
@@ -257,13 +258,13 @@ stampRoutes.get('/api/liff/stamps/me', async (c) => {
     // Oldest voucher expires first, and that is the one `redeem` spends.
     rewardExpiresOn: expiryDate(state.rewardDates[0] ?? null),
     welcome: {
-      status: welcomeStatus(welcome),
+      status: displayStatus(welcomeStatus(welcome), welcome.usedAt),
       issuedDate: welcome.issuedDate,
       usedAt: welcome.usedAt,
       expiresOn: expiryDate(welcome.issuedDate),
     },
     comeback: {
-      status: comebackStatus(comebackState),
+      status: displayStatus(comebackStatus(comebackState), comebackState.usedAt),
       issuedDate: comebackState.issuedDate,
       usedAt: comebackState.usedAt,
       expiresOn: expiryDate(comebackState.issuedDate),
