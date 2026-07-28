@@ -58,6 +58,14 @@ const RING = '#E6DAC0';
 const FAINT = '#D9CBAE';
 const FONT = "'Hiragino Maru Gothic ProN','Hiragino Sans','Yu Gothic',system-ui,sans-serif";
 
+// What a filled card is worth. Kept in step with the same wording in
+// routes/stamps.ts, which writes the coupon pushed to the chat.
+const REWARD_NAME = 'プチセット';
+const REWARD_SUBTITLE = 'ドリンク1杯＋スイーツ1種';
+const REWARD_TERMS =
+  'ドリンクはプレミアムを除く1杯、スイーツはパフェ以外からお好きな1種をお選びいただけます。';
+const REWARD_IMAGE_URL = '/images/53e6305c-b05c-48f0-a075-88d30065314f.jpg';
+
 async function api(path: string, idToken: string, body?: unknown): Promise<Response> {
   return fetch(path, {
     method: body ? 'POST' : 'GET',
@@ -426,7 +434,7 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
       case 'earned':
         return { text: `スタンプを1つ押しました🌙 あと${banner.goal - banner.count}個で無料券です`, tone: 'good' };
       case 'rewarded':
-        return { text: `満杯です！バスクチーズケーキの無料券が${banner.rewardsPending}枚たまりました🎉`, tone: 'good' };
+        return { text: `満杯です！${REWARD_NAME}の無料券が${banner.rewardsPending}枚たまりました🎉`, tone: 'good' };
       case 'already':
         return { text: '本日はスタンプ済みです。またのご来店をお待ちしています🌙', tone: 'warn' };
       case 'redeemed':
@@ -588,10 +596,25 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
               ご利用いただけます
             </p>
             <p style={{ fontSize: 20, fontWeight: 800, margin: '6px 0 0' }}>
-              バスクチーズケーキ 無料券 ×{card.rewardsPending}
+              {REWARD_NAME} 無料券 ×{card.rewardsPending}
             </p>
+            <p style={{ fontSize: 14, fontWeight: 700, margin: '2px 0 0', color: GOLD_DEEP }}>
+              {REWARD_SUBTITLE}
+            </p>
+            <img
+              src={REWARD_IMAGE_URL}
+              alt=""
+              style={{
+                display: 'block',
+                width: '100%',
+                aspectRatio: '3 / 2',
+                objectFit: 'cover',
+                borderRadius: 12,
+                margin: '12px 0 0',
+              }}
+            />
             <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: '#6A5A34' }}>
-              プレーン・キャラメルからお選びいただけます。ご注文時にこの画面をスタッフにお見せください。
+              {REWARD_TERMS}ご注文時にこの画面をスタッフにお見せください。
             </p>
             {card.rewardExpiresOn && (
               <p style={{ fontSize: 13, margin: '8px 0 0', color: GOLD_DEEP, fontWeight: 700 }}>
@@ -651,7 +674,7 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
             <ul style={{ margin: 0, padding: 0, listStyle: 'none', fontSize: 14.5, lineHeight: 1.95, color: '#4A4033' }}>
               {[
                 'ご来店1回につきスタンプ1つ（1日1回まで）',
-                'スタンプ5つでバスクチーズケーキが1つ無料',
+                `スタンプ5つで${REWARD_NAME}（${REWARD_SUBTITLE}）が無料`,
                 '無料券は発行から30日間有効です',
                 '満杯になるとカードは自動でリセットされ、また1つ目から貯まります',
               ].map((t, i, arr) => (
