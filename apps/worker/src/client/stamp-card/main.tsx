@@ -63,7 +63,7 @@ const FONT = "'Hiragino Maru Gothic ProN','Hiragino Sans','Yu Gothic',system-ui,
 const REWARD_NAME = 'プチセット';
 const REWARD_SUBTITLE = 'ドリンク1杯＋スイーツ1種';
 const REWARD_TERMS =
-  'ドリンクはプレミアムを除く1杯、スイーツはバスクチーズケーキ・あんこバターワッフルからお選びいただけます。';
+  'ドリンクはプレミアムを除く1杯、お好きなスイーツ1種をお選びいただけます。';
 const REWARD_IMAGE_URL = '/images/53e6305c-b05c-48f0-a075-88d30065314f.jpg';
 
 async function api(path: string, idToken: string, body?: unknown): Promise<Response> {

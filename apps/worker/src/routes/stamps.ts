@@ -46,7 +46,7 @@ const NUDGE_AT = 3;
 const REWARD_NAME = 'プチセット';
 const REWARD_SUBTITLE = 'ドリンク1杯＋スイーツ1種';
 const REWARD_TERMS =
-  'ドリンクはプレミアムを除く1杯、スイーツはバスクチーズケーキ・あんこバターワッフルからお選びいただけます。';
+  'ドリンクはプレミアムを除く1杯、お好きなスイーツ1種をお選びいただけます。';
 /**
  * Photo of the set, shown on the coupon. Uploaded through POST /api/images and
  * served from this worker's R2 bucket. Absolute on purpose: LINE fetches it
