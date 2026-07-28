@@ -386,6 +386,16 @@ function render(): void {
   const xUsernameField = formDef.fields.find((f) => f.name === 'x_username');
   const hasTwoPages = !!xUsernameField && !!formDef.onSubmitWebhookUrl;
 
+  // Same reasoning as the submit-time X gate: a webhook alone doesn't make a
+  // form an X campaign. Keying the description off the webhook hid it on every
+  // webhook-backed form, which buried the booking form's opening hours and its
+  // notice on how names and phone numbers are used. Only the X-link layout
+  // suppresses it, because page 2 carries its own heading.
+  const descriptionHtml =
+    hasTwoPages || !formDef.description
+      ? ''
+      : `<p class="form-description">${escapeHtml(formDef.description).replace(/\\n|\n/g, '<br>')}</p>`;
+
   const surveyFieldsHtml = surveyFields.map(renderField).join('');
   const xFieldHtml = xUsernameField ? renderField(xUsernameField) : '';
 
@@ -395,7 +405,7 @@ function render(): void {
       <div class="form-page">
         <div class="form-header">
           <h1>${escapeHtml(formDef.name).replace(/\\n|\n/g, '<br>')}</h1>
-          ${formDef.description && !formDef.onSubmitWebhookUrl ? `<p class="form-description">${escapeHtml(formDef.description).replace(/\\n|\n/g, '<br>')}</p>` : ''}
+          ${descriptionHtml}
           ${profileHtml}
         </div>
         <!-- Page 1: Survey -->
@@ -501,7 +511,7 @@ function render(): void {
       <div class="form-page">
         <div class="form-header">
           <h1>${escapeHtml(formDef.name).replace(/\\n|\n/g, '<br>')}</h1>
-          ${formDef.description && !formDef.onSubmitWebhookUrl ? `<p class="form-description">${escapeHtml(formDef.description).replace(/\\n|\n/g, '<br>')}</p>` : ''}
+          ${descriptionHtml}
           ${profileHtml}
         </div>
         <form id="liff-form" class="form-body" novalidate>
