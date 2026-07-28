@@ -42,6 +42,21 @@ export const STAMP_GOAL = 5;
 /** Card count that triggers the "almost there" nudge push. */
 const NUDGE_AT = 3;
 
+/** What a filled card is worth, written the way the customer reads it. */
+const REWARD_NAME = 'プチセット';
+const REWARD_SUBTITLE = 'ドリンク1杯＋スイーツ1種';
+const REWARD_TERMS =
+  'ドリンクはプレミアムを除く1杯、スイーツはバスクチーズケーキ・あんこバターワッフルからお選びいただけます。';
+/**
+ * Photo of the set, shown on the coupon. Uploaded through POST /api/images and
+ * served from this worker's R2 bucket. Absolute on purpose: LINE fetches it
+ * server-side, and every environment should show the production photo rather
+ * than a broken image out of an empty bucket. To swap it, upload a new file and
+ * paste the returned URL here.
+ */
+const REWARD_IMAGE_URL =
+  'https://yoru-line.yoru-line.workers.dev/images/53e6305c-b05c-48f0-a075-88d30065314f.jpg';
+
 export interface StampState {
   count: number;
   lastDate: string | null;
@@ -183,6 +198,15 @@ async function clientFor(env: Env['Bindings'], friend: Friend): Promise<LineClie
 function rewardFlex(rewardsPending: number, expiresOn: string | null): Record<string, unknown> {
   return {
     type: 'bubble',
+    hero: {
+      type: 'image',
+      url: REWARD_IMAGE_URL,
+      size: 'full',
+      // The photo is 540×360 (3:2). Matching the ratio here keeps LINE from
+      // cropping the drink out of frame.
+      aspectRatio: '3:2',
+      aspectMode: 'cover',
+    },
     body: {
       type: 'box',
       layout: 'vertical',
@@ -195,7 +219,8 @@ function rewardFlex(rewardsPending: number, expiresOn: string | null): Record<st
           size: 'xs',
           color: '#C9A227',
         },
-        { type: 'text', text: 'バスクチーズケーキ 1つ無料', weight: 'bold', size: 'xl', wrap: true },
+        { type: 'text', text: `${REWARD_NAME} 1回無料`, weight: 'bold', size: 'xl', wrap: true },
+        { type: 'text', text: REWARD_SUBTITLE, size: 'sm', color: '#C9A227', wrap: true },
         {
           type: 'text',
           text: `5回のご来店、ありがとうございます🌙\n無料券が ${rewardsPending} 枚たまっています。次回のご来店でお使いください。`,
@@ -206,7 +231,7 @@ function rewardFlex(rewardsPending: number, expiresOn: string | null): Record<st
         { type: 'separator', margin: 'lg' },
         {
           type: 'text',
-          text: 'プレーン・キャラメルからお選びいただけます。スタンプカードの画面をスタッフにお見せください。',
+          text: `${REWARD_TERMS}スタンプカードの画面をスタッフにお見せください。`,
           size: 'sm',
           color: '#666666',
           wrap: true,
@@ -378,7 +403,7 @@ stampRoutes.post('/api/liff/stamps/claim', async (c) => {
       } else if (next.count === NUDGE_AT) {
         await client.pushTextMessage(
           friend.line_user_id,
-          `スタンプが${NUDGE_AT}個になりました🌙\n\nあと${STAMP_GOAL - NUDGE_AT}回のご来店で、バスクチーズケーキが1つ無料になります。\n\nいつも足を運んでいただき、ありがとうございます。`,
+          `スタンプが${NUDGE_AT}個になりました🌙\n\nあと${STAMP_GOAL - NUDGE_AT}回のご来店で、${REWARD_NAME}（${REWARD_SUBTITLE}）が無料になります。\n\nいつも足を運んでいただき、ありがとうございます。`,
         );
       }
     }
