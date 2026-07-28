@@ -740,8 +740,16 @@ async function submitForm(): Promise<void> {
     const data = collectFormData();
     console.log('Form data collected:', JSON.stringify(data));
 
-    // Webhook gate — pre-verified by /repliers endpoint
-    if (state.formDef.onSubmitWebhookUrl) {
+    // X campaign gate — the account was pre-verified by the /repliers endpoint,
+    // so here we only confirm the typed handle matches what was verified.
+    //
+    // Keyed on the form actually having an `x_username` field, not merely on a
+    // webhook being configured. A webhook is a general "check this submission
+    // before accepting it" hook — a restaurant booking form uses one to reject
+    // full nights — and demanding an X handle there makes the form impossible
+    // to submit.
+    const hasXGate = state.formDef.fields.some((f) => f.name === 'x_username');
+    if (state.formDef.onSubmitWebhookUrl && hasXGate) {
       // Check that user was selected from pre-verified repliers list
       const xField = ((data.x_username as string) ?? '').trim().replace(/^@/, '');
       if (!xField || xField !== state.verifiedXUsername) {
