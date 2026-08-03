@@ -532,6 +532,35 @@ async function initStampCard(): Promise<void> {
   });
 }
 
+// ─── 予約の確認・キャンセル (React, dynamic-imported) ──────
+
+async function initReservations(): Promise<void> {
+  // stamp-card と同じ初期化シーケンス。予約は friend に紐づくので、
+  // 未友達だと見せるものが無く、そのまま friend-add gate に流す。
+  const [profile, idToken, friendship] = await Promise.all([
+    liff.getProfile(),
+    Promise.resolve(liff.getIDToken()),
+    liff.getFriendship(),
+  ]);
+  if (!idToken) {
+    showError('LINE 認証情報の取得に失敗しました。LINE アプリ内で再度開いてください。');
+    return;
+  }
+
+  if (!friendship.friendFlag) {
+    showFriendAdd(profile);
+    return;
+  }
+
+  const container = document.getElementById('app');
+  if (!container) {
+    showError('mount target #app が見つかりません');
+    return;
+  }
+  const { mountReservations } = await import('./reservations/main.js');
+  mountReservations(container, { idToken });
+}
+
 // ─── Affiliate self-serve (React, dynamic-imported) ──────
 
 async function initAffiliate(): Promise<void> {
@@ -634,6 +663,8 @@ async function main() {
       await initAffiliate();
     } else if (page === 'stamp') {
       await initStampCard();
+    } else if (page === 'reservations') {
+      await initReservations();
     } else if (page === 'form') {
       const params = new URLSearchParams(window.location.search);
       const formId = params.get('id');
