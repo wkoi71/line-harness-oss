@@ -365,14 +365,20 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
     setBusy(false);
   }, [ctx.code, ctx.idToken, load]);
 
+  // どのクーポンも店内でしか使えない。使用は取り消せないので、店内QRを読んで
+  // いない＝スタッフの前にいないときは、サーバーに投げる前に止める。
+  // (サーバー側も同じ合言葉を検査するので、ここは体験のための先回り)
+  const requireInStore = useCallback(() => {
+    if (ctx.code) return true;
+    setBanner({
+      kind: 'error',
+      message: 'クーポンは店内でのご利用のみです。店内のQRを読み取ってからお試しください。',
+    });
+    return false;
+  }, [ctx.code]);
+
   const redeem = useCallback(async () => {
-    if (!ctx.code) {
-      setBanner({
-        kind: 'error',
-        message: '無料券は店内でのご利用のみです。店内のQRを読み取ってからお試しください。',
-      });
-      return;
-    }
+    if (!requireInStore()) return;
     if (!window.confirm('無料券を1枚使用します。スタッフの前で押してください。よろしいですか？')) return;
     setBusy(true);
     const res = await api('/api/liff/stamps/redeem', ctx.idToken, { code: ctx.code });
@@ -384,14 +390,15 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
     }
     await load();
     setBusy(false);
-  }, [ctx.code, ctx.idToken, load]);
+  }, [requireInStore, ctx.code, ctx.idToken, load]);
 
   const redeemWelcome = useCallback(async () => {
+    if (!requireInStore()) return;
     // Deliberately blunt wording: this is one voucher per lifetime, so a
-    // mis-tap at home would be unrecoverable.
+    // mis-tap in front of staff would still be unrecoverable.
     if (!window.confirm('ドリンク1杯無料券を使用します。\n一度使うと二度と使えません。スタッフの前で押してください。\n\nよろしいですか？')) return;
     setBusy(true);
-    const res = await api('/api/liff/stamps/welcome/redeem', ctx.idToken, {});
+    const res = await api('/api/liff/stamps/welcome/redeem', ctx.idToken, { code: ctx.code });
     if (res.ok) {
       setBanner({ kind: 'welcomeUsed' });
     } else {
@@ -399,12 +406,13 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
     }
     await load();
     setBusy(false);
-  }, [ctx.idToken, load]);
+  }, [requireInStore, ctx.code, ctx.idToken, load]);
 
   const redeemComeback = useCallback(async () => {
+    if (!requireInStore()) return;
     if (!window.confirm('カムバッククーポンを使用します。\n一度使うと二度と使えません。スタッフの前で押してください。\n\nよろしいですか？')) return;
     setBusy(true);
-    const res = await api('/api/liff/stamps/comeback/redeem', ctx.idToken, {});
+    const res = await api('/api/liff/stamps/comeback/redeem', ctx.idToken, { code: ctx.code });
     setBanner(
       res.ok
         ? { kind: 'welcomeUsed' }
@@ -412,7 +420,7 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
     );
     await load();
     setBusy(false);
-  }, [ctx.idToken, load]);
+  }, [requireInStore, ctx.code, ctx.idToken, load]);
 
   useEffect(() => {
     void (async () => {

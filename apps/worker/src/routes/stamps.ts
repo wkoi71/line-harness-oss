@@ -297,11 +297,23 @@ stampRoutes.get('/api/liff/stamps/me', async (c) => {
   });
 });
 
-/** Burn the comeback voucher. One per lifetime, same as the welcome one. */
+/**
+ * Burn the comeback voucher. One per lifetime, same as the welcome one.
+ *
+ * Gated on the in-store code for the same reason as the stamp voucher: this is
+ * unrecoverable, and a customer who taps it at home loses it with nothing to
+ * show for it. Requiring the QR means the button only works within reach of a
+ * member of staff.
+ */
 stampRoutes.post('/api/liff/stamps/comeback/redeem', async (c) => {
   const resolved = await resolveFriend(c, c.env);
   if (resolved.status === 'invalid_token') return c.json({ error: 'unauthorized' }, 401);
   if (resolved.status === 'no_friend') return c.json({ error: 'friend_not_found' }, 404);
+
+  const body = await c.req.json<{ code?: string }>().catch(() => ({}) as { code?: string });
+  if (!codeMatches(c.env.STAMP_QR_CODE, body.code)) {
+    return c.json({ error: 'invalid_code' }, 403);
+  }
 
   const friend = resolved.friend;
   const state = readComeback(friend.metadata);
@@ -318,12 +330,18 @@ stampRoutes.post('/api/liff/stamps/comeback/redeem', async (c) => {
 
 /**
  * Burn the friend-add drink voucher. One per lifetime: once `usedAt` is set it
- * is never cleared, so re-adding the account cannot re-arm it.
+ * is never cleared, so re-adding the account cannot re-arm it. Gated on the
+ * in-store code for that reason — see the comeback voucher above.
  */
 stampRoutes.post('/api/liff/stamps/welcome/redeem', async (c) => {
   const resolved = await resolveFriend(c, c.env);
   if (resolved.status === 'invalid_token') return c.json({ error: 'unauthorized' }, 401);
   if (resolved.status === 'no_friend') return c.json({ error: 'friend_not_found' }, 404);
+
+  const body = await c.req.json<{ code?: string }>().catch(() => ({}) as { code?: string });
+  if (!codeMatches(c.env.STAMP_QR_CODE, body.code)) {
+    return c.json({ error: 'invalid_code' }, 403);
+  }
 
   const friend = resolved.friend;
   const welcome = readWelcome(friend.metadata);
