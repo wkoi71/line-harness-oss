@@ -79,6 +79,7 @@ import dedupPreview from './routes/dedup-preview.js';
 import { profileRefresh } from './routes/profile-refresh.js';
 import { richMenuGroups } from './routes/rich-menu-groups.js';
 import stampRoutes from './routes/stamps.js';
+import reservationRoutes from './routes/reservations.js';
 import adminVersion from './routes/admin-version.js';
 import adminUpdate from './routes/admin-update.js';
 import { isLinkPreviewBot } from './lib/og-bot.js';
@@ -141,6 +142,13 @@ export type Env = {
     // Tag that makes a lapsed customer eligible for the comeback voucher
     // (see services/comeback-perk.ts). Unset disables the voucher entirely.
     COMEBACK_TAG_ID?: string;
+    // The form whose submissions are table bookings (see routes/reservations.ts).
+    // Unset disables self-service cancellation: the endpoints 503 rather than
+    // guess which form to cancel from.
+    BOOKING_FORM_ID?: string;
+    // Where to send the "a customer just cancelled" heads-up. Unset means the
+    // calendar entry quietly disappearing is the only signal the shop gets.
+    OWNER_LINE_USER_ID?: string;
   };
   Variables: {
     staff: { id: string; name: string; role: 'owner' | 'admin' | 'staff' };
@@ -185,6 +193,7 @@ app.route('/', openapi);
 app.route('/', liffRoutes);
 app.route('/', affiliateSelfRoutes);
 app.route('/', stampRoutes);
+app.route('/', reservationRoutes);
 
 // Mount route groups — Round 3
 app.route('/', webhooks);
