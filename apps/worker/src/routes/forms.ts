@@ -396,6 +396,27 @@ forms.post('/api/forms/:id/submit', async (c) => {
       data: JSON.stringify(submissionData),
     });
 
+    // Tell the shop a table has just been booked. The booking ledger is a Google
+    // calendar, so otherwise the only way to notice is to open it. Scoped to the
+    // booking form so survey answers stay quiet, and best-effort: the seat is
+    // held either way, and notifyOwner swallows its own failures.
+    if (c.env.BOOKING_FORM_ID && formId === c.env.BOOKING_FORM_ID.trim()) {
+      const { bookingText, notifyOwner } = await import('../services/owner-notify.js');
+      const { parsePeople } = await import('./reservations.js');
+      await notifyOwner(
+        c.env,
+        bookingText({
+          visitDate: String(submissionData.visit_date ?? ''),
+          visitTime: String(submissionData.visit_time ?? ''),
+          people: parsePeople(submissionData.party_size, submissionData.party_size_other),
+          customerName: String(submissionData.customer_name ?? 'お名前未記入'),
+          phone: submissionData.phone as string | null,
+          occasion: submissionData.occasion as string | null,
+          notes: submissionData.notes as string | null,
+        }),
+      );
+    }
+
     // Side effects (best-effort, don't fail the request)
     if (friendId) {
       const db = c.env.DB;

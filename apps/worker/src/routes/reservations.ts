@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { getFriendByLineUserId, getLineAccounts, jstNow, type Friend } from '@line-crm/db';
 import { LineClient } from '@line-crm/line-sdk';
 import { verifyCallerLineUserId } from '../services/liff-auth.js';
+import { cancelText, notifyOwner } from '../services/owner-notify.js';
 import type { Env } from '../index.js';
 
 /**
@@ -42,14 +43,6 @@ export interface ReservationRow {
  */
 export function resolveBookingFormId(env: { BOOKING_FORM_ID?: string }): string | null {
   const raw = env.BOOKING_FORM_ID;
-  if (typeof raw !== 'string') return null;
-  const trimmed = raw.trim();
-  return trimmed ? trimmed : null;
-}
-
-/** Where to send the "a customer just cancelled" heads-up, or null to skip it. */
-export function resolveOwnerLineUserId(env: { OWNER_LINE_USER_ID?: string }): string | null {
-  const raw = env.OWNER_LINE_USER_ID;
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   return trimmed ? trimmed : null;
@@ -272,14 +265,8 @@ reservations.post('/api/liff/reservations/:id/cancel', async (c) => {
         friend.line_user_id,
         `ご予約をキャンセルしました。\n\n${when}／${reservation.people}名\n\nまたのご利用をお待ちしています🌙`,
       );
-      const owner = resolveOwnerLineUserId(c.env);
-      if (owner && owner !== friend.line_user_id) {
-        await client.pushTextMessage(
-          owner,
-          `【キャンセル】\n${when}／${reservation.customerName} 様 ${reservation.people}名\n\nカレンダーの予定は削除済みです。`,
-        );
-      }
     }
+    await notifyOwner(c.env, cancelText(reservation));
   } catch (err) {
     console.error('reservations: cancel notification failed', err);
   }
