@@ -40,15 +40,31 @@ const FONT = "'Hiragino Maru Gothic ProN','Hiragino Sans','Yu Gothic',system-ui,
 
 const TEL = '050-3092-1762';
 
+/**
+ * 応答が返らないまま放置しない。
+ *
+ * 予約の読み込みは id_token の検証でLINEのAPIを1本挟むので、そこが詰まると
+ * 画面が「読み込み中…」のまま無言で止まる。お客様から見ると壊れているのか
+ * 待てばいいのか分からないので、打ち切ってお電話に案内する。
+ */
+const TIMEOUT_MS = 15000;
+
 async function api(path: string, idToken: string, body?: unknown): Promise<Response> {
-  return fetch(path, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    return await fetch(path, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      signal: controller.signal,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
@@ -89,9 +105,13 @@ function ReservationsApp({ ctx }: { ctx: ReservationsContext }) {
       }
       const data = (await res.json()) as { reservations: Reservation[] };
       setItems(data.reservations ?? []);
-    } catch {
+    } catch (e) {
       setItems([]);
-      setError('通信に失敗しました。電波の良い場所でお試しください。');
+      setError(
+        (e as { name?: string })?.name === 'AbortError'
+          ? `読み込みに時間がかかっています。電波の良い場所でお試しいただくか、${TEL} までお電話ください。`
+          : '通信に失敗しました。電波の良い場所でお試しください。',
+      );
     }
   }, [ctx.idToken]);
 
