@@ -419,6 +419,36 @@
       <p class="message">読み込み中...</p>
     </div>
   </div>
+  <script>
+    // アセット名はビルドのたびに変わる。配信の入れ替わり中に古い HTML が返ると、
+    // 存在しない JS を指したままになる。そのときブラウザは黙って何もしないので、
+    // 初期スピナーが回り続けて「ずっと読み込み中」に見える。原因は利用者には
+    // 分からないので、起動できなかったことだけは画面に出して開き直しを促す。
+    window.__lhBooted = false;
+    window.__lhBootFailed = function () {
+      if (window.__lhBooted) return;
+      var app = document.getElementById('app');
+      if (!app) return;
+      app.innerHTML =
+        '<div class="card">' +
+        '<p class="message">読み込みに失敗しました。</p>' +
+        '<p class="message">この画面をいったん閉じて、もう一度開き直してください。</p>' +
+        '</div>';
+    };
+    // script の読み込み失敗は bubble しないので、キャプチャで拾う。
+    // onerror 属性はビルド時にタグごと書き換えられて消えるため、こちらで持つ。
+    window.addEventListener(
+      'error',
+      function (e) {
+        var t = e.target;
+        if (t && t.tagName === 'SCRIPT' && t.src && t.src.indexOf('line-scdn.net') === -1) {
+          window.__lhBootFailed();
+        }
+      },
+      true,
+    );
+    setTimeout(function () { window.__lhBootFailed(); }, 12000);
+  </script>
   <script type="module" src="/src/client/main.ts"></script>
 </body>
 </html>

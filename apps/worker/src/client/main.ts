@@ -631,6 +631,9 @@ async function initAffiliate(): Promise<void> {
 // ─── Entry Point ────────────────────────────────────────
 
 async function main() {
+  // index.html の「読み込めなかった」フォールバックを黙らせる。ここまで来て
+  // いれば JS は動いているので、以降の失敗は showError が拾う。
+  (window as unknown as { __lhBooted?: boolean }).__lhBooted = true;
   try {
     await liff.init({ liffId: LIFF_ID });
 
