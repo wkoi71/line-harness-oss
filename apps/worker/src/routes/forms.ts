@@ -352,6 +352,26 @@ forms.post('/api/forms/:id/submit', async (c) => {
     if (form.on_submit_webhook_url && !skipWebhook) {
       const webhookResult = await callFormWebhook(form, submissionData);
       webhookData = webhookResult.data as Record<string, unknown> | null;
+
+      // 断られたのが「満席・定休日」なのか「連携が壊れている」のかを見分ける。
+      // どちらもお客様には同じお断り文が届くので、故障だと誰も気づけない。
+      // 予約を取り逃がし続ける一番まずい壊れ方なので、ここだけは知らせる。
+      if (!webhookResult.passed) {
+        const reason = (webhookData as { reason?: unknown } | null)?.reason;
+        const broken =
+          webhookData === null ||
+          reason === undefined ||
+          reason === 'error' ||
+          (webhookData as { error?: unknown } | null)?.error !== undefined;
+        if (broken) {
+          const { alertOwner } = await import('../services/error-alert.js');
+          await alertOwner(c.env, 'booking_webhook_error', {
+            form: form.name,
+            response: webhookData,
+          });
+        }
+      }
+
       if (!webhookResult.passed) {
         // Webhook rejected — send fail message and stop
         if (form.on_submit_webhook_fail_message && friendId) {
@@ -395,6 +415,27 @@ forms.post('/api/forms/:id/submit', async (c) => {
       friendId: friendId || null,
       data: JSON.stringify(submissionData),
     });
+
+    // Tell the shop a table has just been booked. The booking ledger is a Google
+    // calendar, so otherwise the only way to notice is to open it. Scoped to the
+    // booking form so survey answers stay quiet, and best-effort: the seat is
+    // held either way, and notifyOwner swallows its own failures.
+    if (c.env.BOOKING_FORM_ID && formId === c.env.BOOKING_FORM_ID.trim()) {
+      const { bookingText, notifyOwner } = await import('../services/owner-notify.js');
+      const { parsePeople } = await import('./reservations.js');
+      await notifyOwner(
+        c.env,
+        bookingText({
+          visitDate: String(submissionData.visit_date ?? ''),
+          visitTime: String(submissionData.visit_time ?? ''),
+          people: parsePeople(submissionData.party_size, submissionData.party_size_other),
+          customerName: String(submissionData.customer_name ?? 'お名前未記入'),
+          phone: submissionData.phone as string | null,
+          occasion: submissionData.occasion as string | null,
+          notes: submissionData.notes as string | null,
+        }),
+      );
+    }
 
     // Side effects (best-effort, don't fail the request)
     if (friendId) {

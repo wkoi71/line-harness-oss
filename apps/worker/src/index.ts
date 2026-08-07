@@ -857,6 +857,22 @@ export async function notFoundHandler(
 }
 app.notFound(notFoundHandler);
 
+/**
+ * 未捕捉の例外を握って、お店に知らせてから 500 を返す。
+ *
+ * これが無いと、500 を踏むのはお客様だけで、店側は誰かに言われるまで知らない。
+ * 通知そのものが失敗しても応答は返す（alertOwner は例外を投げない）。
+ */
+app.onError((err, c) => {
+  console.error('[unhandled]', new URL(c.req.url).pathname, err);
+  c.executionCtx?.waitUntil(
+    import('./services/error-alert.js').then(({ alertOwner }) =>
+      alertOwner(c.env, 'route_error', `${new URL(c.req.url).pathname} — ${err.message}`),
+    ),
+  );
+  return c.json({ success: false, error: 'Internal Server Error' }, 500);
+});
+
 // Scheduled handler for cron triggers — runs for all active LINE accounts
 async function scheduled(
   event: ScheduledEvent,
@@ -986,8 +1002,31 @@ async function scheduled(
   // `重複:` tag rows untouched until that replacement lands.
 }
 
+/**
+ * cron の失敗をお店に知らせてから投げ直す。
+ *
+ * ここが落ちると、ステップ配信・リマインド・期限切れ処理がまとめて止まる。
+ * どれも「届かない」という形でしか表に出ないので、放っておくと何日も
+ * 気づけない（実際にリマインドを10件送り逃した記録がある。index.ts の
+ * scheduled 冒頭のコメント参照）。投げ直すのは Cloudflare 側にも
+ * 失敗として記録させるため。
+ */
+async function scheduledWithAlert(
+  event: ScheduledEvent,
+  env: Env['Bindings'],
+  ctx: ExecutionContext,
+): Promise<void> {
+  try {
+    await scheduled(event, env, ctx);
+  } catch (err) {
+    const { alertOwner } = await import('./services/error-alert.js');
+    await alertOwner(env, 'cron_error', err);
+    throw err;
+  }
+}
+
 export default {
   fetch: app.fetch,
-  scheduled,
+  scheduled: scheduledWithAlert,
 };
 // redeploy trigger
