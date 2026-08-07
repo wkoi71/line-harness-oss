@@ -352,6 +352,26 @@ forms.post('/api/forms/:id/submit', async (c) => {
     if (form.on_submit_webhook_url && !skipWebhook) {
       const webhookResult = await callFormWebhook(form, submissionData);
       webhookData = webhookResult.data as Record<string, unknown> | null;
+
+      // 断られたのが「満席・定休日」なのか「連携が壊れている」のかを見分ける。
+      // どちらもお客様には同じお断り文が届くので、故障だと誰も気づけない。
+      // 予約を取り逃がし続ける一番まずい壊れ方なので、ここだけは知らせる。
+      if (!webhookResult.passed) {
+        const reason = (webhookData as { reason?: unknown } | null)?.reason;
+        const broken =
+          webhookData === null ||
+          reason === undefined ||
+          reason === 'error' ||
+          (webhookData as { error?: unknown } | null)?.error !== undefined;
+        if (broken) {
+          const { alertOwner } = await import('../services/error-alert.js');
+          await alertOwner(c.env, 'booking_webhook_error', {
+            form: form.name,
+            response: webhookData,
+          });
+        }
+      }
+
       if (!webhookResult.passed) {
         // Webhook rejected — send fail message and stop
         if (form.on_submit_webhook_fail_message && friendId) {
