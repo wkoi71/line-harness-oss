@@ -69,7 +69,10 @@ const REWARD_IMAGE_URL = '/images/53e6305c-b05c-48f0-a075-88d30065314f.jpg';
 // Friend-add perk (2026-08-10〜). Replaces the free-drink voucher: the set is
 // what we actually want a first-timer to order, so the discount is on that.
 // Kept in step with step 1 of the welcome scenario, which sends the same copy.
-const WELCOME_TITLE = 'YORU.セット 2,300円 → 2,000円';
+// Non-breaking spaces inside the price: with word-break:keep-all on the title,
+// the only place left to wrap is after "セット", so a narrow screen breaks it as
+// name / price instead of stranding "2,000円" or the arrow.
+const WELCOME_TITLE = 'YORU.セット 2,300円\u00A0→\u00A02,000円';
 const WELCOME_NOTE =
   'ドリンク2杯＋スイーツ1種の「YORU.セット」が300円OFF。球磨焼酎カクテルも、ノンアルコールも対象です。ご注文時にこの画面をスタッフにお見せください。';
 const WELCOME_IMAGE_URL = '/images/f49772ab-8f07-420e-888c-b0e789b160d9.jpg';
@@ -113,12 +116,12 @@ function Sparkle({ size = 16, color = GOLD, style }: { size?: number; color?: st
   );
 }
 
-/** Mini candle used inside stamp slots. */
+/** Mini candle used inside stamp slots. Scales with the slot it sits in. */
 function MiniCandle({ active }: { active: boolean }): JSX.Element {
   const stroke = active ? '#FFFFFF' : FAINT;
   const flame = active ? '#FFFFFF' : FAINT;
   return (
-    <svg width="30" height="34" viewBox="0 0 48 56" aria-hidden>
+    <svg width="52%" height="60%" viewBox="0 0 48 56" aria-hidden>
       <path d="M24 4 C29 14 33 18 33 25 C33 32 29 36 24 36 C19 36 15 32 15 25 C15 18 19 14 24 4 Z" fill={active ? 'url(#flameGrad)' : 'none'} stroke={active ? 'none' : flame} strokeWidth="2.4" />
       <rect x="14" y="34" width="20" height="20" rx="6" fill={active ? '#FFFFFF' : 'none'} stroke={stroke} strokeWidth="2.6" />
       {active && (
@@ -131,18 +134,31 @@ function MiniCandle({ active }: { active: boolean }): JSX.Element {
   );
 }
 
+/**
+ * One slot of the card. Sized by the row, not by itself: five 58px circles plus
+ * their separators need ~350px, but a 360px phone only leaves ~250px inside the
+ * page and card gutters. Fixed widths there did not merely look cramped — the
+ * row set the flex shell's min-content width and dragged the whole page
+ * sideways, which is what made every screen look subtly misaligned.
+ */
 function StampSlot({ filled, first }: { filled: boolean; first?: boolean }): JSX.Element {
   return (
-    <div style={{ position: 'relative', width: 58, height: 58, flex: '0 0 auto' }}>
+    <div style={{ position: 'relative', flex: '1 1 0', minWidth: 0, maxWidth: 58, aspectRatio: '1 / 1' }}>
       {filled && first && (
-        <svg width="24" height="16" viewBox="0 0 24 16" style={{ position: 'absolute', top: -14, left: 17 }} aria-hidden>
+        <svg
+          width="24"
+          height="16"
+          viewBox="0 0 24 16"
+          style={{ position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)' }}
+          aria-hidden
+        >
           <path d="M12 0 V10 M4 3 L7 11 M20 3 L17 11" stroke={GOLD_DEEP} strokeWidth="2.4" strokeLinecap="round" />
         </svg>
       )}
       <div
         style={{
-          width: 58,
-          height: 58,
+          width: '100%',
+          height: '100%',
           borderRadius: '50%',
           border: filled ? `2.5px solid ${GOLD_DEEP}` : `2.5px solid ${RING}`,
           background: filled ? 'url(#goldGrad)' : 'transparent',
@@ -161,12 +177,21 @@ function StampSlot({ filled, first }: { filled: boolean; first?: boolean }): JSX
 
 function StampRow({ count, goal }: { count: number; goal: number }): JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, margin: '26px 0 10px' }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 'clamp(2px, 1.2vw, 6px)',
+        margin: '26px 0 10px',
+        width: '100%',
+      }}
+    >
       {Array.from({ length: goal }, (_, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center' }}>
+        <div key={i} style={{ display: 'flex', alignItems: 'center', flex: '1 1 0', minWidth: 0 }}>
           <StampSlot filled={i < count} first={i === 0} />
           {i < goal - 1 && (
-            <span style={{ display: 'flex', gap: 3, margin: '0 1px' }} aria-hidden>
+            <span style={{ display: 'flex', gap: 3, margin: '0 1px', flex: '0 0 auto' }} aria-hidden>
               <span style={{ width: 3, height: 3, borderRadius: '50%', background: FAINT }} />
               <span style={{ width: 3, height: 3, borderRadius: '50%', background: FAINT }} />
             </span>
@@ -179,8 +204,8 @@ function StampRow({ count, goal }: { count: number; goal: number }): JSX.Element
 
 function Ribbon({ text }: { text: string }): JSX.Element {
   return (
-    <div style={{ position: 'relative', width: 270, height: 46, margin: '0 auto' }}>
-      <svg width="270" height="46" viewBox="0 0 270 46" style={{ position: 'absolute', inset: 0 }} aria-hidden>
+    <div style={{ position: 'relative', width: 'min(270px, 100%)', aspectRatio: '270 / 46', margin: '0 auto' }}>
+      <svg width="100%" height="100%" viewBox="0 0 270 46" style={{ position: 'absolute', inset: 0 }} aria-hidden>
         <path d="M0 8 L20 23 L0 38 L14 23 Z" fill={GOLD_DEEP} />
         <path d="M270 8 L250 23 L270 38 L256 23 Z" fill={GOLD_DEEP} />
         <rect x="16" y="2" width="238" height="42" rx="8" fill="url(#goldGrad)" stroke={GOLD_DEEP} strokeWidth="1.5" />
@@ -274,9 +299,18 @@ function CouponCard({
       </p>
       <p
         style={{
-          fontSize: 22,
+          // The friend-add title carries a before/after price, so it is long.
+          // Let it shrink rather than wrap a lone "円" onto its own line.
+          fontSize: 'clamp(18px, 5.6vw, 22px)',
           fontWeight: 800,
           margin: '6px 0 0',
+          lineHeight: 1.35,
+          // Japanese breaks between any two characters by default, which split
+          // the price as "2,300" / "円 → 2,000円". keep-all confines breaks to
+          // the spaces, so it wraps as name / price; break-word is the escape
+          // hatch if a future title has one very long run.
+          wordBreak: 'keep-all',
+          overflowWrap: 'break-word',
           textDecoration: live ? 'none' : 'line-through',
           color: live ? INK : MUTED,
         }}
@@ -484,34 +518,53 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
   const remaining = card ? Math.max(0, card.goal - card.count) : 0;
 
   return (
-    <div style={{ background: PAGE, minHeight: '100vh', fontFamily: FONT, color: INK, display: 'flex', flexDirection: 'column' }}>
+    <div
+      style={{
+        background: PAGE,
+        minHeight: '100vh',
+        fontFamily: FONT,
+        color: INK,
+        display: 'flex',
+        flexDirection: 'column',
+        // Nothing inside may widen the page. Without this a single oversized
+        // child turns the whole screen into a sideways-scrolling canvas, and
+        // every section reads as "slightly off" rather than as one clipped row.
+        maxWidth: '100%',
+        overflowX: 'hidden',
+      }}
+    >
       <Defs />
-      <div style={{ maxWidth: 480, margin: '0 auto', padding: '20px 20px 8px', position: 'relative' }}>
+      <div style={{ width: '100%', maxWidth: 480, margin: '0 auto', padding: '20px 16px 8px', position: 'relative' }}>
         {/* logo */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
           <img src={LOGO} alt="YORU. SWEETS & BAR" style={{ width: 96, height: 'auto' }} />
         </div>
 
-        {/* header: title + mascot */}
-        <div style={{ position: 'relative', minHeight: 158 }}>
-          <div style={{ position: 'relative', zIndex: 2, paddingRight: 96 }}>
+        {/* header: title + mascot. The mascot is absolutely positioned, so the
+            title's right padding has to track its width — both scale with the
+            viewport, otherwise "スタンプカード" runs under the candle on a
+            narrow phone. */}
+        <div style={{ position: 'relative', minHeight: 'clamp(126px, 40vw, 158px)' }}>
+          <div style={{ position: 'relative', zIndex: 2, paddingRight: 'clamp(88px, 27vw, 104px)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 13, letterSpacing: '.12em', color: LABEL, fontWeight: 800 }}>
                 YORU. SWEETS &amp; BAR
               </span>
               <Sparkle size={13} />
             </div>
-            <h1 style={{ fontSize: 34, margin: '6px 0 4px', fontWeight: 800, letterSpacing: '.01em' }}>スタンプカード</h1>
+            <h1 style={{ fontSize: 'clamp(27px, 8.4vw, 34px)', margin: '6px 0 4px', fontWeight: 800, letterSpacing: '.01em' }}>
+              スタンプカード
+            </h1>
             {card?.displayName && (
-              <p style={{ fontSize: 17, color: INK, margin: 0, fontWeight: 700 }}>
+              <p style={{ fontSize: 17, color: INK, margin: 0, fontWeight: 700, overflowWrap: 'anywhere' }}>
                 {card.displayName} <span style={{ fontSize: 14, fontWeight: 500 }}>さん</span>
               </p>
             )}
           </div>
-          <div style={{ position: 'absolute', top: 0, right: -6, zIndex: 1 }}>
+          <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
             <Sparkle size={20} style={{ position: 'absolute', top: 4, left: -14 }} />
             <Sparkle size={12} style={{ position: 'absolute', top: 44, right: 0 }} />
-            <img src={CANDLE_SIT} alt="" style={{ width: 110, height: 'auto', display: 'block' }} />
+            <img src={CANDLE_SIT} alt="" style={{ width: 'clamp(84px, 26vw, 110px)', height: 'auto', display: 'block' }} />
           </div>
         </div>
 
@@ -578,13 +631,25 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
             <div style={{ position: 'relative' }}>
               <Ribbon text="5つ貯めて無料券をGET！" />
               <StampRow count={card.count} goal={card.goal} />
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 14, marginTop: 6 }}>
-                <span style={{ fontSize: 30, fontWeight: 800 }}>
+              {/* Two readings of the same number. On a narrow screen they drop
+                  onto separate lines as whole phrases — never mid-phrase, which
+                  is how "個" and "券" used to end up stranded on their own. */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'center',
+                  flexWrap: 'wrap',
+                  gap: '2px 14px',
+                  marginTop: 6,
+                }}
+              >
+                <span style={{ fontSize: 'clamp(26px, 8vw, 30px)', fontWeight: 800, whiteSpace: 'nowrap' }}>
                   {card.count} <span style={{ color: MUTED }}>/</span> {card.goal}
                   <span style={{ fontSize: 17 }}> 個</span>
                 </span>
                 {remaining > 0 && (
-                  <span style={{ fontSize: 17, fontWeight: 700, color: '#6A5A34' }}>
+                  <span style={{ fontSize: 17, fontWeight: 700, color: '#6A5A34', whiteSpace: 'nowrap' }}>
                     あと <span style={{ color: ORANGE, fontSize: 24, fontWeight: 800 }}>{remaining}</span> 個で無料券
                   </span>
                 )}
@@ -596,18 +661,22 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
                   background: PILL_BG,
                   color: PILL_TEXT,
                   borderRadius: 999,
-                  padding: '9px 16px',
+                  padding: '9px 14px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 8,
-                  fontSize: 14,
+                  gap: 6,
+                  // A pill that wraps to two lines stops looking like a pill.
+                  // Give the longest string ("店内のQRコードを読み取ってください")
+                  // room to stay on one line down to a 320px screen.
+                  fontSize: 'clamp(11.5px, 3.4vw, 14px)',
                   fontWeight: 700,
+                  whiteSpace: 'nowrap',
                 }}
               >
-                <Sparkle size={12} color={GOLD} />
+                <Sparkle size={12} color={GOLD} style={{ flex: '0 0 auto' }} />
                 {card.stampedToday ? '本日のスタンプは押し済みです' : '店内のQRコードを読み取ってください'}
-                <Sparkle size={12} color={GOLD} />
+                <Sparkle size={12} color={GOLD} style={{ flex: '0 0 auto' }} />
               </div>
             </div>
           ) : (
@@ -718,7 +787,8 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
                     display: 'flex',
                     gap: 8,
                     alignItems: 'flex-start',
-                    paddingRight: i >= arr.length - 1 ? 78 : 0,
+                    // Keep the last lines clear of the mascot pinned bottom-right.
+                    paddingRight: i >= arr.length - 1 ? 'clamp(64px, 21vw, 78px)' : 0,
                   }}
                 >
                   <span
@@ -735,7 +805,15 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
                 </li>
               ))}
               {card && card.rewardsTotal > 0 && (
-                <li style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 4 }}>
+                <li
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    alignItems: 'flex-start',
+                    marginTop: 4,
+                    paddingRight: 'clamp(64px, 21vw, 78px)',
+                  }}
+                >
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: ORANGE, flex: '0 0 auto', marginTop: 9 }} />
                   <span>これまでに獲得した無料券：{card.rewardsTotal}枚</span>
                 </li>
@@ -755,5 +833,15 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
 }
 
 export function mountStampCard(container: HTMLElement, ctx: StampCardContext): void {
+  // The shared shell (index.html) centres #app inside a flex body, with its own
+  // 480px cap, its own gutters and a grey backdrop. This page paints a
+  // full-bleed background and manages its own gutters, so hand it the whole
+  // viewport: otherwise the card sits in a grey frame with doubled padding,
+  // and — because a flex item will not shrink below its content — any wide
+  // child pushes the entire page sideways instead of being contained.
+  document.body.style.display = 'block';
+  document.body.style.background = PAGE;
+  container.style.maxWidth = 'none';
+  container.style.padding = '0';
   createRoot(container).render(<StampCard ctx={ctx} />);
 }
