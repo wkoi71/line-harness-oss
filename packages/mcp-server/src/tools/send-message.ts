@@ -2,6 +2,57 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../client.js";
 
+/**
+ * Mark a Flex message as a test send without changing what is being tested.
+ *
+ * A test send exists to show the real thing, so the banner is added *around*
+ * the message: every other property of the bubble — hero image, styles, size —
+ * is carried through untouched. The previous version rebuilt the bubble from
+ * body + footer alone, which silently dropped the hero and made the preview a
+ * lie; it also used the 3-digit colour `#333`, which LINE rejects outright
+ * (`invalid property /header/contents/0/color`), so no Flex test send worked
+ * at all. Colours here must be #RRGGBB or #RRGGBBAA.
+ */
+function withTestBanner(flex: Record<string, unknown>): Record<string, unknown> {
+  const banner = {
+    type: "text",
+    text: "⚠️ テスト配信",
+    size: "sm",
+    weight: "bold",
+    color: "#333333",
+    align: "center",
+    wrap: true,
+  };
+  const header = {
+    type: "box",
+    layout: "vertical",
+    backgroundColor: "#FFE066",
+    paddingAll: "8px",
+    contents: [banner],
+  };
+
+  if (flex.type === "carousel" && Array.isArray(flex.contents)) {
+    // Carousels have no header of their own — banner every bubble, so the
+    // marking survives however far the reviewer swipes.
+    return {
+      ...flex,
+      contents: flex.contents.map((bubble) =>
+        bubble && typeof bubble === "object"
+          ? withTestBanner(bubble as Record<string, unknown>)
+          : bubble,
+      ),
+    };
+  }
+
+  const existing = flex.header as { contents?: unknown } | undefined;
+  if (existing && typeof existing === "object" && Array.isArray(existing.contents)) {
+    // Keep the message's own header; the banner just goes on top of it.
+    return { ...flex, header: { ...existing, contents: [banner, ...existing.contents] } };
+  }
+
+  return { ...flex, header };
+}
+
 export function registerSendMessage(server: McpServer): void {
   server.tool(
     "send_message",
@@ -49,19 +100,7 @@ export function registerSendMessage(server: McpServer): void {
             finalContent = `【テスト配信】\n${content}`;
           } else if (messageType === "flex") {
             try {
-              const flex = JSON.parse(content);
-              // Wrap in a carousel with a test banner
-              finalContent = JSON.stringify({
-                type: "bubble",
-                header: {
-                  type: "box",
-                  layout: "vertical",
-                  backgroundColor: "#FFE066",
-                  paddingAll: "8px",
-                  contents: [{ type: "text", text: "⚠️ テスト配信", size: "sm", weight: "bold", color: "#333", align: "center" }],
-                },
-                ...(flex.type === "bubble" ? { body: flex.body, footer: flex.footer } : { body: { type: "box", layout: "vertical", contents: [{ type: "text", text: "テスト配信", wrap: true }] } }),
-              });
+              finalContent = JSON.stringify(withTestBanner(JSON.parse(content)));
             } catch {
               finalContent = content;
             }
