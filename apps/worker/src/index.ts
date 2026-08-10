@@ -253,6 +253,20 @@ app.get('/api/qr', async (c) => {
   });
 });
 
+/**
+ * `page` values `/r/:ref` and `/o` will forward to the LIFF target.
+ *
+ * Limited to pages whose client initializer enforces the friend-add gate
+ * (initSalonBooking / initEventBooking / initStampCard). `book` and `form`
+ * would slip past that gate and past ref-based attribution, so they stay out
+ * until those initializers are unified.
+ *
+ * Both routes read this one set. They were declared separately and the comment
+ * on the second one already claimed it matched the first — one edit away from
+ * being a lie.
+ */
+const LIFF_PAGE_PASSTHROUGH = new Set(['salon-book', 'event', 'event-me', 'stamp']);
+
 // Short link: /r/:ref → universal landing page with LINE open button
 // Supports query params: ?form=FORM_ID (auto-push form after friend add)
 // Mobile: single CTA → LIFF URL (Universal Link). No UA detection.
@@ -344,17 +358,13 @@ app.get('/r/:ref', async (c) => {
   if (iga) liffParams.set('iga', iga);
   const igan = c.req.query('igan');
   if (igan) liffParams.set('igan', igan);
-  // LIFF in-app navigation passthrough — OpenChat strips raw liff.line.me
-  // URLs, so we accept `page` / `id` here and forward them to the resolved
-  // LIFF target. Limited to pages whose client initializer enforces the
-  // friend-add gate (initSalonBooking, initEventBooking); page=book/form
-  // would bypass that gate and bypass ref-based attribution, so they are
-  // intentionally excluded until those initializers are unified.
-  const PAGE_PASSTHROUGH_ALLOWED = new Set(['salon-book', 'event', 'event-me']);
+  // LIFF in-app navigation passthrough — see LIFF_PAGE_PASSTHROUGH.
   const page = c.req.query('page');
-  if (page && PAGE_PASSTHROUGH_ALLOWED.has(page)) liffParams.set('page', page);
+  if (page && LIFF_PAGE_PASSTHROUGH.has(page)) liffParams.set('page', page);
   const id = c.req.query('id');
   if (id) liffParams.set('id', id);
+  const sc = c.req.query('sc');
+  if (sc) liffParams.set('sc', sc);
   const liffTarget = liffParams.toString() ? `${liffUrl}?${liffParams.toString()}` : liffUrl;
 
   // Help link carries the *resolved* liff target as `t=` so the help page
@@ -638,11 +648,16 @@ app.get('/o', async (c) => {
 
   const liffParams = new URLSearchParams();
   liffParams.set('liffId', liffId);
-  const PAGE_PASSTHROUGH_ALLOWED = new Set(['salon-book', 'event', 'event-me']);
   const page = c.req.query('page');
-  if (page && PAGE_PASSTHROUGH_ALLOWED.has(page)) liffParams.set('page', page);
+  if (page && LIFF_PAGE_PASSTHROUGH.has(page)) liffParams.set('page', page);
   const id = c.req.query('id');
   if (id) liffParams.set('id', id);
+  // 店内 QR / NFC の合言葉。NFC は端末の既定ブラウザで開くので liff.line.me を
+  // 直接書き込むと LINE アプリに渡らず Web ログインを要求される。この /o を挟んで
+  // 「LINEで開く」を踏ませる必要があり、そのとき合言葉も一緒に運ばないと
+  // スタンプが押せない。
+  const sc = c.req.query('sc');
+  if (sc) liffParams.set('sc', sc);
   const liffTarget = `https://liff.line.me/${liffId}?${liffParams.toString()}`;
 
   const ua = (c.req.header('user-agent') || '').toLowerCase();
