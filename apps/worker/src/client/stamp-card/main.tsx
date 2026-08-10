@@ -66,6 +66,14 @@ const REWARD_TERMS =
   'ドリンクはプレミアムを除く1杯、スイーツはパフェ以外からお好きな1種をお選びいただけます。';
 const REWARD_IMAGE_URL = '/images/53e6305c-b05c-48f0-a075-88d30065314f.jpg';
 
+// Friend-add perk (2026-08-10〜). Replaces the free-drink voucher: the set is
+// what we actually want a first-timer to order, so the discount is on that.
+// Kept in step with step 1 of the welcome scenario, which sends the same copy.
+const WELCOME_TITLE = 'YORU.セット 2,300円 → 2,000円';
+const WELCOME_NOTE =
+  'ドリンク2杯＋スイーツ1種の「YORU.セット」が300円OFF。球磨焼酎カクテルも、ノンアルコールも対象です。ご注文時にこの画面をスタッフにお見せください。';
+const WELCOME_IMAGE_URL = '/images/f49772ab-8f07-420e-888c-b0e789b160d9.jpg';
+
 async function api(path: string, idToken: string, body?: unknown): Promise<Response> {
   return fetch(path, {
     method: body ? 'POST' : 'GET',
@@ -233,6 +241,7 @@ function CouponCard({
   label,
   title,
   note,
+  imageUrl,
   busy,
   onRedeem,
 }: {
@@ -240,6 +249,8 @@ function CouponCard({
   label: string;
   title: string;
   note: string;
+  /** Shown only while the voucher is live — a spent one needs no appetite appeal. */
+  imageUrl?: string;
   busy: boolean;
   onRedeem: () => Promise<void>;
 }): JSX.Element | null {
@@ -275,6 +286,20 @@ function CouponCard({
 
       {live && (
         <>
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              alt=""
+              style={{
+                display: 'block',
+                width: '100%',
+                aspectRatio: '3 / 2',
+                objectFit: 'cover',
+                borderRadius: 12,
+                margin: '12px 0 0',
+              }}
+            />
+          )}
           <p style={{ fontSize: 13, lineHeight: 1.7, margin: '10px 0 0', color: '#6A5A34' }}>{note}</p>
           {state.expiresOn && (
             <p style={{ fontSize: 13, margin: '8px 0 0', color: GOLD_DEEP, fontWeight: 700 }}>
@@ -396,7 +421,7 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
     if (!requireInStore()) return;
     // Deliberately blunt wording: this is one voucher per lifetime, so a
     // mis-tap in front of staff would still be unrecoverable.
-    if (!window.confirm('ドリンク1杯無料券を使用します。\n一度使うと二度と使えません。スタッフの前で押してください。\n\nよろしいですか？')) return;
+    if (!window.confirm('YORU.セットの割引クーポン（2,300円→2,000円）を使用します。\n一度使うと二度と使えません。スタッフの前で押してください。\n\nよろしいですか？')) return;
     setBusy(true);
     const res = await api('/api/liff/stamps/welcome/redeem', ctx.idToken, { code: ctx.code });
     if (res.ok) {
@@ -513,8 +538,9 @@ function StampCard({ ctx }: { ctx: StampCardContext }): JSX.Element {
         <CouponCard
           state={card?.welcome}
           label="友だち追加ありがとうクーポン"
-          title="ドリンク1杯 無料"
-          note="球磨焼酎カクテルも、ノンアルコールも対象です。ご注文時にこの画面をスタッフにお見せください。"
+          title={WELCOME_TITLE}
+          note={WELCOME_NOTE}
+          imageUrl={WELCOME_IMAGE_URL}
           busy={busy}
           onRedeem={redeemWelcome}
         />
