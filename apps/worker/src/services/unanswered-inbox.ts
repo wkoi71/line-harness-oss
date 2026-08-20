@@ -21,10 +21,12 @@ const MAX_PAGE_SIZE = 2000;
 //       が「ルール後付け」扱いされてフィルタを通り抜けていた。現実的には
 //       button label / FAQ keyword は安定運用なので、現在の active キーワード
 //       が一致したら歴史問わず構造化メッセと判定する。)
+//     - 受け皿 (is_fallback=1) は除外。keyword が表示用ラベルでしかなく、
+//       button label / FAQ キーワードではないため。
 const ACTIVE_AUTO_REPLIES_SQL = `
   SELECT keyword, match_type
   FROM auto_replies
-  WHERE is_active = 1
+  WHERE is_active = 1 AND is_fallback = 0
 `;
 
 interface ActiveRuleRow {

@@ -12,6 +12,11 @@ export interface AutoReply {
   template_id: string | null;
   line_account_id: string | null;
   is_active: number;
+  /**
+   * 1 = 受け皿。keyword は表示用ラベルでしかなく、キーワード照合には一切使われない。
+   * どのルールにもマッチしなかったテキストのときだけ返信に使われる (webhook.ts)。
+   */
+  is_fallback: number;
   created_at: string;
 }
 
@@ -51,6 +56,7 @@ export interface CreateAutoReplyInput {
   responseContent: string;
   templateId?: string | null;
   lineAccountId?: string | null;
+  isFallback?: boolean;
 }
 
 export async function createAutoReply(
@@ -64,8 +70,8 @@ export async function createAutoReply(
     .prepare(
       `INSERT INTO auto_replies
          (id, keyword, match_type, response_type, response_content,
-          template_id, line_account_id, is_active, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+          template_id, line_account_id, is_active, is_fallback, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
     )
     .bind(
       id,
@@ -75,6 +81,7 @@ export async function createAutoReply(
       input.responseContent,
       input.templateId ?? null,
       input.lineAccountId ?? null,
+      input.isFallback ? 1 : 0,
       now,
     )
     .run();
@@ -90,6 +97,7 @@ export interface UpdateAutoReplyInput {
   templateId?: string | null;
   lineAccountId?: string | null;
   isActive?: boolean;
+  isFallback?: boolean;
 }
 
 export async function updateAutoReply(
@@ -112,6 +120,7 @@ export async function updateAutoReply(
            template_id = ?,
            line_account_id = ?,
            is_active = ?,
+           is_fallback = ?,
            created_at = ?
        WHERE id = ?`,
     )
@@ -123,6 +132,8 @@ export async function updateAutoReply(
       'templateId' in input ? (input.templateId ?? null) : existing.template_id,
       'lineAccountId' in input ? (input.lineAccountId ?? null) : existing.line_account_id,
       'isActive' in input ? (input.isActive ? 1 : 0) : existing.is_active,
+      // 管理画面の編集ダイアログが isFallback を送らない場合でもフラグを落とさない
+      'isFallback' in input ? (input.isFallback ? 1 : 0) : existing.is_fallback,
       existing.created_at,
       id,
     )

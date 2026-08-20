@@ -22,6 +22,7 @@ interface AutoReply {
   templateId: string | null
   lineAccountId: string | null
   isActive: boolean
+  isFallback: boolean
   createdAt: string
   effectiveAccounts?: EffectiveAccount[]
 }
@@ -160,6 +161,7 @@ export default function AutoRepliesPage() {
               templateId: null,
               lineAccountId: selectedAccountId,
               isActive: true,
+              isFallback: false,
             })}
             className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-opacity hover:opacity-90"
             style={{ backgroundColor: '#06C755' }}
@@ -204,7 +206,18 @@ export default function AutoRepliesPage() {
                 items.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.keyword}</td>
-                    <td className="px-4 py-3 text-xs text-gray-600">{matchTypeLabel[r.matchType]}</td>
+                    <td className="px-4 py-3 text-xs text-gray-600">
+                      {r.isFallback ? (
+                        <span
+                          className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-700"
+                          title="どのキーワードにも当たらなかったメッセージにだけ返信します"
+                        >
+                          受け皿
+                        </span>
+                      ) : (
+                        matchTypeLabel[r.matchType]
+                      )}
+                    </td>
                     <td className="px-4 py-3">{renderResponseCell(r)}</td>
                     <td className="px-4 py-3">{renderTemplateCell(r)}</td>
                     <td className="px-4 py-3">{renderEffectiveCell(r)}</td>
@@ -224,6 +237,7 @@ export default function AutoRepliesPage() {
                           templateId: r.templateId,
                           lineAccountId: r.lineAccountId,
                           isActive: r.isActive,
+                          isFallback: r.isFallback,
                         })}
                         className="px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-md"
                       >

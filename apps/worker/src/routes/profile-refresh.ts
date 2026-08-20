@@ -456,7 +456,7 @@ profileRefresh.get('/api/admin/auto-reply-stats', async (c) => {
       WHERE ml.direction = 'incoming'
         AND ml.message_type = 'text'
         AND ml.created_at >= ?
-        AND ml.content IN (SELECT keyword FROM auto_replies WHERE is_active = 1)
+        AND ml.content IN (SELECT keyword FROM auto_replies WHERE is_active = 1 AND is_fallback = 0)
       GROUP BY f.line_account_id, ml.content
       ORDER BY incoming_count DESC
     `)

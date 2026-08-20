@@ -27,6 +27,7 @@ interface SerializedAutoReply {
   templateId: string | null;
   lineAccountId: string | null;
   isActive: boolean;
+  isFallback: boolean;
   createdAt: string;
   effectiveAccounts?: EffectiveAccount[];
 }
@@ -41,6 +42,7 @@ function serializeAutoReply(row: DbAutoReply): SerializedAutoReply {
     templateId: row.template_id,
     lineAccountId: row.line_account_id,
     isActive: Boolean(row.is_active),
+    isFallback: Boolean(row.is_fallback),
     createdAt: row.created_at,
   };
 }
@@ -157,9 +159,13 @@ autoReplies.post('/api/auto-replies', async (c) => {
       responseContent?: string;
       templateId?: string | null;
       lineAccountId?: string | null;
+      isFallback?: boolean;
     }>();
 
-    if (!body.keyword) {
+    // 受け皿 (isFallback) はキーワード照合を通らないので keyword は任意。
+    // 一覧での見分けがつくようにラベルだけ入れておく。
+    const keyword = body.keyword || (body.isFallback ? '（受け皿）' : '');
+    if (!keyword) {
       return c.json({ success: false, error: 'keyword is required' }, 400);
     }
     // template_id があれば content は空でも OK (template から resolve される)。
@@ -183,12 +189,13 @@ autoReplies.post('/api/auto-replies', async (c) => {
     }
 
     const item = await createAutoReply(c.env.DB, {
-      keyword: body.keyword,
+      keyword,
       matchType: body.matchType,
       responseType: resolvedResponseType,
       responseContent: resolvedResponseContent,
       templateId: body.templateId ?? null,
       lineAccountId: body.lineAccountId ?? null,
+      isFallback: body.isFallback ?? false,
     });
 
     return c.json({ success: true, data: serializeAutoReply(item) }, 201);
@@ -210,6 +217,7 @@ autoReplies.put('/api/auto-replies/:id', async (c) => {
       templateId?: string | null;
       lineAccountId?: string | null;
       isActive?: boolean;
+      isFallback?: boolean;
     }>();
 
     const input: Record<string, unknown> = {};
@@ -220,6 +228,8 @@ autoReplies.put('/api/auto-replies/:id', async (c) => {
     if ('templateId' in body) input.templateId = body.templateId;
     if ('lineAccountId' in body) input.lineAccountId = body.lineAccountId;
     if (body.isActive !== undefined) input.isActive = body.isActive;
+    // 未指定なら既存値を維持 (受け皿フラグを知らない画面からの更新で落とさない)
+    if (body.isFallback !== undefined) input.isFallback = body.isFallback;
 
     // templateId が新たに set されて responseContent が来てない場合は template の
     // 現在値を inline snapshot として書き込む (ON DELETE SET NULL の fallback 用)。

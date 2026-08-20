@@ -184,6 +184,41 @@ async function processAutomations(
   }
 }
 
+/**
+ * 「この payload に対して IF-THEN 自動化が send_message を実行するか」を先読みする。
+ *
+ * 受け皿 (auto_replies.is_fallback) を出すかどうかの判定にだけ使う。受け皿と自動化の
+ * 返信が両方出ると 2 通並び、LINE 公式アカウント側の応答メッセージをオフにして消した
+ * はずの重複がこちら側で再現してしまうため。
+ *
+ * 判定は processAutomations と同じ matchConditions を通す。ただし currentScore は
+ * この時点で未計算なので score_threshold 条件は「マッチする」側に倒れる =
+ * 受け皿を出さない方向に転ぶ。重複を出すより無反応のほうが安全なので意図的。
+ */
+export async function willAutomationSendMessage(
+  db: D1Database,
+  eventType: string,
+  payload: EventPayload,
+  lineAccountId?: string | null,
+): Promise<boolean> {
+  try {
+    const all = await getActiveAutomationsByEvent(db, eventType);
+    return all
+      .filter((a) => !a.line_account_id || !lineAccountId || a.line_account_id === lineAccountId)
+      .some((a) => {
+        const conditions = JSON.parse(a.conditions) as Record<string, unknown>;
+        if (!matchConditions(conditions, payload)) return false;
+        const actions = JSON.parse(a.actions) as Array<{ type: string }>;
+        return actions.some((action) => action.type === 'send_message');
+      });
+  } catch (err) {
+    // 判定できないときは受け皿を出す。自動化の読み取りが壊れている状態で
+    // お客様を無言にしてしまうほうが困るため。
+    console.error('willAutomationSendMessage error:', err);
+    return false;
+  }
+}
+
 /** 条件マッチング */
 function matchConditions(
   conditions: Record<string, unknown>,

@@ -457,6 +457,8 @@ export interface AutoReply {
   responseContent: string
   lineAccountId: string | null
   isActive: boolean
+  /** true = 受け皿。キーワード照合の対象外で、どのルールにも当たらなかったときだけ返信する */
+  isFallback: boolean
   createdAt: string
 }
 
@@ -466,6 +468,7 @@ export interface CreateAutoReplyInput {
   responseType?: string
   responseContent: string
   lineAccountId?: string | null
+  isFallback?: boolean
 }
 
 export interface UpdateAutoReplyInput {
@@ -475,6 +478,7 @@ export interface UpdateAutoReplyInput {
   responseContent?: string
   lineAccountId?: string | null
   isActive?: boolean
+  isFallback?: boolean
 }
 
 // ─── Calendar ───────────────────────────────────────────

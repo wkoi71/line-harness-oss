@@ -13,6 +13,8 @@ export interface AutoReplyDraft {
   templateId: string | null
   lineAccountId: string | null
   isActive: boolean
+  /** true = 受け皿。キーワード照合の対象外で、どのルールにも当たらなかったときだけ返信する */
+  isFallback: boolean
 }
 
 interface Props {
@@ -39,6 +41,7 @@ export default function EditDialog({ draft, templates, onClose, onSaved }: Props
   const [templateId, setTemplateId] = useState<string | null>(draft.templateId)
   const [responseContent, setResponseContent] = useState(draft.responseContent)
   const [isActive, setIsActive] = useState(draft.isActive)
+  const [isFallback, setIsFallback] = useState(draft.isFallback)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -47,7 +50,7 @@ export default function EditDialog({ draft, templates, onClose, onSaved }: Props
   const imageTemplates = templates.filter((t) => t.messageType === 'image')
 
   const handleSave = async () => {
-    if (!keyword.trim()) { setError('keyword を入力してください'); return }
+    if (!isFallback && !keyword.trim()) { setError('keyword を入力してください'); return }
     if (mode === 'template' && !templateId) { setError('template を選んでください'); return }
     if ((mode === 'inline-text' || mode === 'inline-flex' || mode === 'inline-image') && !responseContent.trim()) {
       setError('内容を入力してください'); return
@@ -63,8 +66,9 @@ export default function EditDialog({ draft, templates, onClose, onSaved }: Props
         templateId: string | null;
         lineAccountId: string | null;
         isActive: boolean;
+        isFallback: boolean;
       } = {
-        keyword,
+        keyword: isFallback ? (keyword.trim() || '（受け皿）') : keyword,
         matchType,
         responseType:
           mode === 'silent' ? 'silent'
@@ -78,6 +82,7 @@ export default function EditDialog({ draft, templates, onClose, onSaved }: Props
         templateId: mode === 'template' ? templateId : null,
         lineAccountId: draft.lineAccountId,
         isActive,
+        isFallback,
       }
       if (mode === 'template' && templateId) {
         const tpl = templates.find((t) => t.id === templateId)
@@ -108,31 +113,50 @@ export default function EditDialog({ draft, templates, onClose, onSaved }: Props
           <h3 className="text-base font-semibold">{draft.id ? '自動返信ルール 編集' : '新規 自動返信ルール'}</h3>
         </div>
         <div className="p-5 space-y-4">
+          <label className="flex items-start gap-2 rounded-md bg-gray-50 border border-gray-200 px-3 py-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isFallback}
+              onChange={(e) => setIsFallback(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="text-xs text-gray-700">
+              <span className="font-medium">受け皿にする</span>
+              <span className="block text-gray-500 mt-0.5">
+                キーワード照合の対象外になり、どのルールにも当たらなかったメッセージにだけ 1 通返信します。
+                LINE 公式アカウント側の「応答メッセージ」の代わりです。
+              </span>
+            </span>
+          </label>
           <div>
-            <label className="block text-xs text-gray-600 mb-1">keyword</label>
+            <label className="block text-xs text-gray-600 mb-1">
+              {isFallback ? 'ラベル (一覧での表示名・照合には使いません)' : 'keyword'}
+            </label>
             <input
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="例: コスト比較"
+              placeholder={isFallback ? '（受け皿）' : '例: コスト比較'}
             />
           </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">マッチ方法</label>
-            <div className="flex gap-2">
-              {(['exact', 'contains'] as const).map((mt) => (
-                <button
-                  key={mt}
-                  onClick={() => setMatchType(mt)}
-                  className={`px-3 py-1.5 text-xs rounded-md ${matchType === mt ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                  style={matchType === mt ? { backgroundColor: '#06C755' } : undefined}
-                >
-                  {mt === 'exact' ? '完全一致' : '包含'}
-                </button>
-              ))}
+          {!isFallback && (
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">マッチ方法</label>
+              <div className="flex gap-2">
+                {(['exact', 'contains'] as const).map((mt) => (
+                  <button
+                    key={mt}
+                    onClick={() => setMatchType(mt)}
+                    className={`px-3 py-1.5 text-xs rounded-md ${matchType === mt ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    style={matchType === mt ? { backgroundColor: '#06C755' } : undefined}
+                  >
+                    {mt === 'exact' ? '完全一致' : '包含'}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           <div>
             <label className="block text-xs text-gray-600 mb-1">応答方法</label>
             <div className="flex flex-wrap gap-2">

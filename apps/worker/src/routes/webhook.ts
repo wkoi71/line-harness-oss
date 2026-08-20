@@ -358,8 +358,8 @@ async function handleEvent(
 
     // Match postback data against auto_replies (exact match on keyword)
     const autoReplyQuery = lineAccountId
-      ? `SELECT * FROM auto_replies WHERE is_active = 1 AND (line_account_id IS NULL OR line_account_id = ?) ORDER BY created_at ASC`
-      : `SELECT * FROM auto_replies WHERE is_active = 1 AND line_account_id IS NULL ORDER BY created_at ASC`;
+      ? `SELECT * FROM auto_replies WHERE is_active = 1 AND is_fallback = 0 AND (line_account_id IS NULL OR line_account_id = ?) ORDER BY created_at ASC`
+      : `SELECT * FROM auto_replies WHERE is_active = 1 AND is_fallback = 0 AND line_account_id IS NULL ORDER BY created_at ASC`;
     const autoReplyStmt = db.prepare(autoReplyQuery);
     const autoReplies = await (lineAccountId ? autoReplyStmt.bind(lineAccountId) : autoReplyStmt)
       .all<{
@@ -573,8 +573,8 @@ async function handleEvent(
     // NOTE: Auto-replies use replyMessage (free, no quota) instead of pushMessage
     // The replyToken is only valid for ~1 minute after the message event
     const autoReplyQuery = lineAccountId
-      ? `SELECT * FROM auto_replies WHERE is_active = 1 AND (line_account_id IS NULL OR line_account_id = ?) ORDER BY created_at ASC`
-      : `SELECT * FROM auto_replies WHERE is_active = 1 AND line_account_id IS NULL ORDER BY created_at ASC`;
+      ? `SELECT * FROM auto_replies WHERE is_active = 1 AND is_fallback = 0 AND (line_account_id IS NULL OR line_account_id = ?) ORDER BY created_at ASC`
+      : `SELECT * FROM auto_replies WHERE is_active = 1 AND is_fallback = 0 AND line_account_id IS NULL ORDER BY created_at ASC`;
     const autoReplyStmt = db.prepare(autoReplyQuery);
     const autoReplies = await (lineAccountId ? autoReplyStmt.bind(lineAccountId) : autoReplyStmt)
       .all<{
@@ -638,7 +638,33 @@ async function handleEvent(
       }
     }
 
-    // auto_replies にマッチしなかった = 自発メッセージ → unread にする
+    // どのキーワードにも当たらなかった自由文には受け皿を 1 通返す。
+    // (LINE 公式アカウント側の「応答メッセージ」をオフにするための代替。
+    //  受け皿を登録していないアカウントでは何も送らないので挙動は変わらない)
+    // postback 経路では呼ばない — メニュータップに「個別のお問い合わせは
+    // お受けできません」を返すのは誤りなので、テキスト経路だけの扱いにしている。
+    if (!matched && !replyTokenConsumed) {
+      // 受け皿は「あれば出す」おまけ。ここで throw すると下の
+      // upsertChatOnMessage / fireEvent まで巻き添えで飛び、受信メッセージが
+      // 未対応 inbox からも自動化からも消える。受け皿が出ないだけに留める。
+      try {
+        replyTokenConsumed = await replyWithFallback(
+          db,
+          lineClient,
+          friend,
+          incomingText,
+          event.replyToken,
+          lineAccountId,
+          workerUrl,
+        );
+      } catch (err) {
+        console.error('Failed to resolve fallback auto-reply', err);
+      }
+    }
+
+    // auto_replies にマッチしなかった = 自発メッセージ → unread にする。
+    // 受け皿を返した場合も matched は false のまま = お客様の自発メッセージで
+    // あることに変わりはないので、未対応 inbox / unread の扱いは変えない。
     if (!matched) {
       await upsertChatOnMessage(db, friend.id);
     }
@@ -652,6 +678,90 @@ async function handleEvent(
     }, lineAccessToken, lineAccountId);
 
     return;
+  }
+}
+
+/**
+ * どのキーワードにも当たらなかったテキストへの受け皿を 1 通だけ返す。
+ *
+ * LINE 公式アカウント側の「応答メッセージ」は Webhook と同時に発火してキーワード返信と
+ * 2 通並ぶため、あちらはオフにする運用になる。その代わりの受け皿がこれ。
+ * 戻り値は replyToken を消費したか。
+ */
+async function replyWithFallback(
+  db: D1Database,
+  lineClient: LineClient,
+  friend: { id: string },
+  incomingText: string,
+  replyToken: string,
+  lineAccountId: string | null | undefined,
+  workerUrl: string | undefined,
+): Promise<boolean> {
+  const accountId = lineAccountId ?? null;
+
+  // アカウント専用の受け皿を全体共通より優先。同じ scope 内では古いほうを正とする
+  // (運用中に増えても挙動が突然入れ替わらないように)。
+  const fallback = await db
+    .prepare(
+      `SELECT * FROM auto_replies
+        WHERE is_active = 1 AND is_fallback = 1
+          AND (line_account_id IS NULL OR line_account_id = ?)
+        ORDER BY (line_account_id IS NULL) ASC, created_at ASC
+        LIMIT 1`,
+    )
+    .bind(accountId)
+    .first<{
+      template_id: string | null;
+      response_type: string;
+      response_content: string;
+    }>();
+
+  if (!fallback || fallback.response_type === 'silent') return false;
+
+  // IF-THEN 自動化がこのテキストに返信する構成なら受け皿は出さない。両方出ると
+  // 「自動化の返信」と「受け皿」で 2 通並び、LINE 公式側の応答メッセージをオフに
+  // して消したはずの重複がこちら側で再現してしまう。
+  const { willAutomationSendMessage } = await import('../services/event-bus.js');
+  const automationWillReply = await willAutomationSendMessage(
+    db,
+    'message_received',
+    { friendId: friend.id, eventData: { text: incomingText, matched: false } },
+    accountId,
+  );
+  if (automationWillReply) return false;
+
+  try {
+    const { resolveMetadata, messageToLogPayload } = await import('../services/step-delivery.js');
+    const resolvedMeta = await resolveMetadata(db, {
+      user_id: (friend as unknown as Record<string, string | null>).user_id,
+      metadata: (friend as unknown as Record<string, string | null>).metadata,
+    });
+    const resolved = await resolveAutoReplyContent(db, {
+      template_id: fallback.template_id,
+      response_type: fallback.response_type,
+      response_content: fallback.response_content,
+    });
+    const expandedContent = expandVariables(
+      resolved.content,
+      { ...friend, metadata: resolvedMeta } as Parameters<typeof expandVariables>[1],
+      workerUrl,
+      resolved.messageType,
+    );
+    const replyMsg = buildMessage(resolved.messageType, expandedContent);
+    await lineClient.replyMessage(replyToken, [replyMsg]);
+
+    const payload = messageToLogPayload(replyMsg);
+    await db
+      .prepare(
+        `INSERT INTO messages_log (id, friend_id, direction, message_type, content, broadcast_id, scenario_step_id, delivery_type, source, created_at)
+         VALUES (?, ?, 'outgoing', ?, ?, NULL, NULL, 'reply', 'auto_reply', ?)`,
+      )
+      .bind(crypto.randomUUID(), friend.id, payload.messageType, payload.content, jstNow())
+      .run();
+    return true;
+  } catch (err) {
+    console.error('Failed to send fallback auto-reply', err);
+    return false;
   }
 }
 

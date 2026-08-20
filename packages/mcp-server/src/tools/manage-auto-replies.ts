@@ -5,7 +5,7 @@ import { getClient } from "../client.js";
 export function registerManageAutoReplies(server: McpServer): void {
   server.tool(
     "manage_auto_replies",
-    "自動応答の管理操作。list: 一覧、get: 詳細、create: 作成、update: 更新、delete: 削除。キーワードに一致するメッセージに自動返信する。",
+    "自動応答の管理操作。list: 一覧、get: 詳細、create: 作成、update: 更新、delete: 削除。キーワードに一致するメッセージに自動返信する。isFallback=true の行は「受け皿」で、どのキーワードにも当たらなかったテキストにだけ1通返信する。",
     {
       action: z.enum(["list", "get", "create", "update", "delete"]).describe("Action to perform"),
       autoReplyId: z.string().optional().describe("Auto-reply ID (required for get, update, delete)"),
@@ -15,8 +15,9 @@ export function registerManageAutoReplies(server: McpServer): void {
       responseContent: z.string().optional().describe("Response message content (for create, update)"),
       lineAccountId: z.string().nullable().optional().describe("LINE account ID filter (for list, create, update)"),
       isActive: z.boolean().optional().describe("Active status (for update)"),
+      isFallback: z.boolean().optional().describe("受け皿にする。キーワード照合の対象外になり、どのルールにも当たらなかったテキストにだけ返信する (for create, update)"),
     },
-    async ({ action, autoReplyId, keyword, matchType, responseType, responseContent, lineAccountId, isActive }) => {
+    async ({ action, autoReplyId, keyword, matchType, responseType, responseContent, lineAccountId, isActive, isFallback }) => {
       try {
         const client = getClient();
         if (action === "list") {
@@ -24,12 +25,13 @@ export function registerManageAutoReplies(server: McpServer): void {
           return { content: [{ type: "text" as const, text: JSON.stringify({ success: true, autoReplies: items }, null, 2) }] };
         }
         if (action === "create") {
-          if (!keyword) throw new Error("keyword is required for create");
+          if (!keyword && !isFallback) throw new Error("keyword is required for create");
           if (!responseContent) throw new Error("responseContent is required for create");
           const createInput: Record<string, unknown> = {
             keyword,
             responseContent,
           };
+          if (isFallback !== undefined) createInput.isFallback = isFallback;
           if (matchType !== undefined) createInput.matchType = matchType;
           if (responseType !== undefined) createInput.responseType = responseType;
           if (lineAccountId !== undefined) createInput.lineAccountId = lineAccountId;
@@ -49,6 +51,7 @@ export function registerManageAutoReplies(server: McpServer): void {
           if (responseContent !== undefined) input.responseContent = responseContent;
           if (lineAccountId !== undefined) input.lineAccountId = lineAccountId;
           if (isActive !== undefined) input.isActive = isActive;
+          if (isFallback !== undefined) input.isFallback = isFallback;
           const item = await client.autoReplies.update(autoReplyId, input);
           return { content: [{ type: "text" as const, text: JSON.stringify({ success: true, autoReply: item }, null, 2) }] };
         }

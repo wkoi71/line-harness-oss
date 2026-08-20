@@ -708,6 +708,7 @@ export const api = {
         templateId: string | null;
         lineAccountId: string | null;
         isActive: boolean;
+        isFallback: boolean;
         createdAt: string;
         effectiveAccounts?: Array<{
           accountId: string;
@@ -727,6 +728,7 @@ export const api = {
         templateId: string | null;
         lineAccountId: string | null;
         isActive: boolean;
+        isFallback: boolean;
         createdAt: string;
       }>>(`/api/auto-replies/${id}`),
     create: (body: {
@@ -736,6 +738,7 @@ export const api = {
       responseContent?: string;
       templateId?: string | null;
       lineAccountId?: string | null;
+      isFallback?: boolean;
     }) =>
       fetchApi<ApiResponse<{ id: string }>>('/api/auto-replies', {
         method: 'POST',
@@ -749,6 +752,7 @@ export const api = {
       templateId?: string | null;
       lineAccountId?: string | null;
       isActive?: boolean;
+      isFallback?: boolean;
     }) =>
       fetchApi<ApiResponse<{ id: string }>>(`/api/auto-replies/${id}`, {
         method: 'PUT',
