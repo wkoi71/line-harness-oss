@@ -42,9 +42,13 @@ export interface WelcomeState {
 export function businessDate(now: string = jstNow()): string {
   const d = new Date(now);
   if (Number.isNaN(d.getTime())) return now.slice(0, 10);
-  d.setHours(d.getHours() - DAY_ROLLOVER_HOUR);
+  // getHours() / getDate() は実行環境のローカル時刻を返す。Workers は UTC で
+  // 動くので、そのまま使うと境界が 05:00 JST ではなく 14:00 JST になる。手元は
+  // JST なのでローカルのテストでは通ってしまい、CI (UTC) が初めて踏んだ。
+  // JST の壁時計に自分で寄せてから UTC ゲッターで読む — これならどの環境でも同じ。
+  const jst = new Date(d.getTime() + (9 - DAY_ROLLOVER_HOUR) * 3600_000);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${jst.getUTCFullYear()}-${pad(jst.getUTCMonth() + 1)}-${pad(jst.getUTCDate())}`;
 }
 
 function parseMetadata(metadataJson: string | null | undefined): Record<string, unknown> {
