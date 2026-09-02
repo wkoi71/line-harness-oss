@@ -1,16 +1,15 @@
 name: Deploy Cloudflare Worker
 
+# 本番デプロイは手動起動のみ。
+#
+# main への push で自動デプロイにしない理由: この運用では main に直接 commit
+# するため、push がそのまま本番反映になると、検証前の変更が店の稼働中の Worker
+# に出てしまう。デプロイは「出す」と決めたときの行為として残す。テストは
+# worker-ci.yml が push/PR で回すので、gate はそちらが担う。
+#
+#   gh workflow run deploy-cloudflare-worker.yml --ref main
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/worker/**'
-      - 'apps/liff/**'
-      - 'packages/db/**'
-      - 'packages/shared/**'
-      - 'packages/line-sdk/**'
-      - '.github/workflows/deploy-cloudflare-worker.yml'
 
 jobs:
   deploy:
