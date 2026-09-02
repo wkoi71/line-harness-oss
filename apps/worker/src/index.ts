@@ -11,6 +11,7 @@ import {
   getLineAccountById,
   getAffiliateLinkByRefCode,
   incrementAffiliateLinkClick,
+  withD1Retry,
 } from '@line-crm/db';
 import { processStepDeliveries } from './services/step-delivery.js';
 import { processScheduledBroadcasts, processQueuedBroadcasts } from './services/broadcast.js';
@@ -894,8 +895,11 @@ async function scheduled(
   env: Env['Bindings'],
   _ctx: ExecutionContext,
 ): Promise<void> {
-  // Get all active accounts from DB
-  const dbAccounts = await getLineAccounts(env.DB);
+  // Get all active accounts from DB.
+  // ここが cron 全体の入口で、落ちれば配信もリマインドも動かない。D1 の一過性の
+  // コネクション断 (`D1_ERROR: Network connection lost.`) で丸ごと止めないよう
+  // 再試行を挟む。読み取りなので何度実行しても副作用は無い。
+  const dbAccounts = await withD1Retry(() => getLineAccounts(env.DB));
 
   // Build LineClient map for insight fetching (keyed by account id)
   const lineClients = new Map<string, LineClient>();

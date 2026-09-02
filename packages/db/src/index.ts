@@ -1,4 +1,5 @@
 export { jstNow, toJstString, isTimeBefore } from './utils';
+export { isTransientD1Error, withD1Retry } from './retry';
 export * from './friends';
 export * from './tags';
 export * from './scenarios';
