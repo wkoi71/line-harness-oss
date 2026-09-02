@@ -114,6 +114,8 @@ CREATE TABLE auto_replies (
   template_id      TEXT REFERENCES templates(id) ON DELETE SET NULL,
   line_account_id  TEXT DEFAULT NULL,
   is_active        INTEGER NOT NULL DEFAULT 1,
+  -- 1 = 受け皿。キーワード照合の対象外で、どのルールにも当たらなかったときだけ返信に使う
+  is_fallback      INTEGER NOT NULL DEFAULT 0,
   created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now', '+9 hours'))
 );
 
@@ -851,6 +853,10 @@ CREATE INDEX idx_affiliate_links_affiliate ON affiliate_links (affiliate_id);
 CREATE INDEX idx_affiliate_links_offer ON affiliate_links (offer_id);
 
 CREATE UNIQUE INDEX idx_affiliates_friend ON affiliates (friend_id) WHERE friend_id IS NOT NULL;
+
+CREATE INDEX idx_auto_replies_fallback
+  ON auto_replies(line_account_id, created_at)
+  WHERE is_fallback = 1;
 
 CREATE INDEX idx_auto_replies_template_id ON auto_replies(template_id);
 
